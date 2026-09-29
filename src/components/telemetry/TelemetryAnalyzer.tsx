@@ -155,6 +155,22 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         file: "/sample-telemetry/silverstone-f1.csv",
         refFile: "/sample-telemetry/silverstone-f1-pro-reference.csv",
       },
+      redbullring: {
+        game: "iRacing",
+        car: "Mercedes-AMG GT4",
+        track: "Red Bull Ring (Spielberg GP)",
+        weather: "Dry",
+        trackTemp: "39°C",
+        airTemp: "25°C",
+        tyres: "Michelin Pilot Sport GT",
+        fuel: "40 L",
+        driverStyle: "Heavy Trail-Braker",
+        balance: "Neutral Balance",
+        target: "Sprint Race (Tyre Life & Agility)",
+        complaint: "Understeer on entry into Turn 3 Remus hairpin, snap oversteer across Turn 6 exit kerb",
+        file: "/sample-telemetry/redbullring-amg-gt4.csv",
+        refFile: "",
+      },
     };
 
     const cfg = presets[presetKey];
@@ -229,18 +245,61 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     setParsedTelemetry(parsed);
     setActivePreset("");
 
-    if (referenceTelemetry) {
-      try {
-        const comp = computeLapComparison(parsed, referenceTelemetry, track);
-        setLapComparison(comp);
-      } catch (errComp) {
-        console.warn("Could not compute lap comparison:", errComp);
-        setLapComparison(null);
-      }
+    // Auto-detect track, car, and sim game from filename
+    const lowerName = parsed.filename.toLowerCase();
+    let detectedTrack = track;
+
+    if (lowerName.includes("redbull") || lowerName.includes("red_bull") || lowerName.includes("spielberg") || lowerName.includes("rbr") || lowerName.includes("austria")) {
+      detectedTrack = "Red Bull Ring (Spielberg GP)";
+      setTrack("Red Bull Ring (Spielberg GP)");
+    } else if (lowerName.includes("silverstone")) {
+      detectedTrack = "Silverstone Grand Prix Circuit";
+      setTrack("Silverstone Grand Prix Circuit");
+    } else if (lowerName.includes("monza")) {
+      detectedTrack = "Autodromo Nazionale Monza";
+      setTrack("Autodromo Nazionale Monza");
+    } else if (lowerName.includes("spa") || lowerName.includes("francorchamps")) {
+      detectedTrack = "Circuit de Spa-Francorchamps";
+      setTrack("Circuit de Spa-Francorchamps");
+    } else if (lowerName.includes("suzuka")) {
+      detectedTrack = "Suzuka International Racing Course";
+      setTrack("Suzuka International Racing Course");
+    } else if (lowerName.includes("interlagos") || lowerName.includes("pace")) {
+      detectedTrack = "Autódromo José Carlos Pace (Interlagos)";
+      setTrack("Autódromo José Carlos Pace (Interlagos)");
+    } else if (lowerName.includes("cota") || lowerName.includes("americas")) {
+      detectedTrack = "Circuit of the Americas (COTA)";
+      setTrack("Circuit of the Americas (COTA)");
+    } else if (lowerName.includes("zandvoort")) {
+      detectedTrack = "Circuit Zandvoort";
+      setTrack("Circuit Zandvoort");
+    } else if (lowerName.includes("barcelona") || lowerName.includes("catalunya")) {
+      detectedTrack = "Circuit de Barcelona-Catalunya";
+      setTrack("Circuit de Barcelona-Catalunya");
     }
 
+    if (lowerName.includes("mercedes") || lowerName.includes("amg")) {
+      setCar("Mercedes-AMG GT4");
+    } else if (lowerName.includes("corvette")) {
+      setCar("Corvette C7.R");
+    } else if (lowerName.includes("porsche")) {
+      setCar("Porsche 992 GT3 R");
+    } else if (lowerName.includes("ferrari")) {
+      setCar("Ferrari 296 GT3");
+    }
+
+    if (lowerName.includes("iracing") || lowerName.includes(".ibt")) {
+      setGame("iRacing");
+    } else if (lowerName.includes("assetto") || lowerName.includes("acc")) {
+      setGame("Assetto Corsa Competizione");
+    }
+
+    // Reset reference comparison if it was from a different track
+    setReferenceTelemetry(null);
+    setLapComparison(null);
+
     try {
-      const gg = computeGGFrictionCircle(parsed, referenceTelemetry);
+      const gg = computeGGFrictionCircle(parsed, null);
       setFrictionCircleData(gg);
     } catch (errGg) {
       console.warn("Could not compute G-G friction circle:", errGg);
@@ -1169,56 +1228,37 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             </div>
           )}
 
-          {/* Quick Demo Presets */}
-          <div className="demo-telemetry-box">
-            <div className="demo-box-label">
-              <span className="demo-dot"></span>
-              <span>Calibrated Telemetry Stints</span>
+          {/* Optional Reference Laps (Secondary) */}
+          <div className="mt-3 pt-3 border-t border-white/5">
+            <div className="text-[11px] text-slate-400 font-medium mb-2 flex items-center justify-between">
+              <span>Quick reference runs:</span>
+              <span className="text-[10px] text-slate-500 font-mono">OPTIONAL</span>
             </div>
-            <div className="demo-presets-row">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className={`demo-btn ${activePreset === "spa" ? "active" : ""}`}
+                className={`px-2.5 py-1.5 rounded-lg border text-left text-xs transition-all ${
+                  activePreset === "redbullring"
+                    ? "border-blue-500/50 bg-blue-500/10 text-white"
+                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20"
+                }`}
+                onClick={() => loadPreset("redbullring")}
+              >
+                <div className="font-semibold truncate">Red Bull Ring (iRacing)</div>
+                <div className="text-[10px] text-slate-400">AMG GT4 · 60 Hz</div>
+              </button>
+
+              <button
+                type="button"
+                className={`px-2.5 py-1.5 rounded-lg border text-left text-xs transition-all ${
+                  activePreset === "spa"
+                    ? "border-blue-500/50 bg-blue-500/10 text-white"
+                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20"
+                }`}
                 onClick={() => loadPreset("spa")}
               >
-                <div className="demo-btn-top">
-                  <span className="demo-btn-title">Spa-Francorchamps</span>
-                  {activePreset === "spa" && <span className="demo-active-pill">ACTIVE</span>}
-                </div>
-                <div className="demo-btn-meta">
-                  <span>Ferrari 296 GT3</span>
-                  <span className="demo-laptime">2:17.482</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`demo-btn ${activePreset === "monza" ? "active" : ""}`}
-                onClick={() => loadPreset("monza")}
-              >
-                <div className="demo-btn-top">
-                  <span className="demo-btn-title">Monza GP</span>
-                  {activePreset === "monza" && <span className="demo-active-pill">ACTIVE</span>}
-                </div>
-                <div className="demo-btn-meta">
-                  <span>Porsche 992 GT3 R</span>
-                  <span className="demo-laptime">1:47.310</span>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`demo-btn ${activePreset === "silverstone" ? "active" : ""}`}
-                onClick={() => loadPreset("silverstone")}
-              >
-                <div className="demo-btn-top">
-                  <span className="demo-btn-title">Silverstone GP</span>
-                  {activePreset === "silverstone" && <span className="demo-active-pill">ACTIVE</span>}
-                </div>
-                <div className="demo-btn-meta">
-                  <span>Red Bull F1</span>
-                  <span className="demo-laptime">1:28.150</span>
-                </div>
+                <div className="font-semibold truncate">Spa-Francorchamps</div>
+                <div className="text-[10px] text-slate-400">Ferrari 296 GT3</div>
               </button>
             </div>
           </div>
@@ -1639,6 +1679,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 benchmarkMode={benchmarkMode}
                 activeCornerId={activeCornerId}
                 onSelectCorner={(corner) => setActiveCornerId(corner ? corner.shortName || corner.id : null)}
+                onSelectCircuit={(circuitKey) => setTrack(circuitKey)}
               />
             )}
 
