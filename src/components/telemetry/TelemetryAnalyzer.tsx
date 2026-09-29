@@ -65,8 +65,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
 }) => {
   // Session & Vehicle Spec
   const [game, setGame] = useState("Assetto Corsa Competizione");
-  const [car, setCar] = useState("Ferrari 296 GT3");
-  const [track, setTrack] = useState("Spa-Francorchamps GP");
+  const [car, setCar] = useState("");
+  const [track, setTrack] = useState("");
   const [sessionType, setSessionType] = useState("Practice / Hotlap");
   const [weather, setWeather] = useState("Dry");
   const [trackTemp, setTrackTemp] = useState("30°C");
@@ -78,12 +78,9 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const [driverStyle, setDriverStyle] = useState("Heavy Trail-Braker");
   const [balancePreference, setBalancePreference] = useState("Neutral Balance");
   const [setupTarget, setSetupTarget] = useState("Qualifying Hotlap (Peak Grip)");
-  const [driverComplaint, setDriverComplaint] = useState(
-    "Front wash and mid-corner understeer into Bus Stop chicane, snap oversteer on kerb exit"
-  );
+  const [driverComplaint, setDriverComplaint] = useState("");
 
   // Telemetry Data State
-  const [activePreset, setActivePreset] = useState("spa");
   const [parsedTelemetry, setParsedTelemetry] = useState<ParsedTelemetryFile | null>(null);
   const [referenceTelemetry, setReferenceTelemetry] = useState<ParsedTelemetryFile | null>(null);
   const [lapComparison, setLapComparison] = useState<LapComparisonSummary | null>(null);
@@ -272,133 +269,6 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     }
   };
 
-  // Load Preset Handler
-  const loadPreset = async (presetKey: string) => {
-    setActivePreset(presetKey);
-
-    const presets: Record<string, any> = {
-      spa: {
-        game: "Assetto Corsa Competizione",
-        car: "Ferrari 296 GT3",
-        track: "Spa-Francorchamps GP",
-        weather: "Dry",
-        trackTemp: "30°C",
-        airTemp: "22°C",
-        tyres: "DHE Slick",
-        fuel: "35 L",
-        driverStyle: "Heavy Trail-Braker",
-        balance: "Neutral Balance",
-        target: "Qualifying Hotlap (Peak Grip)",
-        complaint: "Front wash and mid-corner understeer into Bus Stop chicane, snap oversteer on kerb exit",
-        file: "/sample-telemetry/spa-gt3-motec.csv",
-        refFile: "/sample-telemetry/spa-gt3-pro-reference.csv",
-      },
-      monza: {
-        game: "Assetto Corsa Competizione",
-        car: "Porsche 992 GT3 R",
-        track: "Monza GP",
-        weather: "Dry",
-        trackTemp: "32°C",
-        airTemp: "24°C",
-        tyres: "Medium Slick",
-        fuel: "28 L",
-        driverStyle: "Throttle-Steerer / Power Rotator",
-        balance: "Planted / Safe Rear",
-        target: "Race Stint (Tire Life & Consistency)",
-        complaint: "Front tyres overheating into Prima Variante braking zone, wheelspin on exit of Ascari",
-        file: "/sample-telemetry/monza-gt3-motec.csv",
-        refFile: "/sample-telemetry/monza-gt3-pro-reference.csv",
-      },
-      silverstone: {
-        game: "F1 24",
-        car: "Red Bull RB20",
-        track: "Silverstone GP",
-        weather: "Dry",
-        trackTemp: "28°C",
-        airTemp: "21°C",
-        tyres: "Soft Slick (C3)",
-        fuel: "45 L",
-        driverStyle: "Momentum / Smooth Roller",
-        balance: "Pointy / Loose Rotation",
-        target: "Qualifying Hotlap (Peak Grip)",
-        complaint: "High-speed understeer through Becketts complex, locking inside front into Brooklands",
-        file: "/sample-telemetry/silverstone-f1.csv",
-        refFile: "/sample-telemetry/silverstone-f1-pro-reference.csv",
-      },
-      redbullring: {
-        game: "iRacing",
-        car: "Mercedes-AMG GT4",
-        track: "Red Bull Ring (Spielberg GP)",
-        weather: "Dry",
-        trackTemp: "39°C",
-        airTemp: "25°C",
-        tyres: "Michelin Pilot Sport GT",
-        fuel: "40 L",
-        driverStyle: "Heavy Trail-Braker",
-        balance: "Neutral Balance",
-        target: "Sprint Race (Tyre Life & Agility)",
-        complaint: "Understeer on entry into Turn 3 Remus hairpin, snap oversteer across Turn 6 exit kerb",
-        file: "/sample-telemetry/redbullring-amg-gt4.csv",
-        refFile: "",
-      },
-    };
-
-    const cfg = presets[presetKey];
-    if (!cfg) return;
-
-    setGame(cfg.game);
-    setCar(cfg.car);
-    setTrack(cfg.track);
-    setWeather(cfg.weather);
-    setTrackTemp(cfg.trackTemp);
-    setAirTemp(cfg.airTemp);
-    setTyreCompound(cfg.tyres);
-    setFuelLoad(cfg.fuel);
-    setDriverStyle(cfg.driverStyle);
-    setBalancePreference(cfg.balance);
-    setSetupTarget(cfg.target);
-    setDriverComplaint(cfg.complaint);
-
-    try {
-      const [resDriver, resRef] = await Promise.all([
-        fetch(cfg.file),
-        cfg.refFile ? fetch(cfg.refFile) : Promise.resolve(null),
-      ]);
-
-      if (!resDriver.ok) throw new Error("Could not load sample CSV.");
-      const textDriver = await resDriver.text();
-      const parsedDriver = parseTelemetryCSV(textDriver, `${presetKey}-driver-motec.csv`);
-      setParsedTelemetry(parsedDriver);
-
-      let parsedRefData: ParsedTelemetryFile | null = null;
-      if (resRef && resRef.ok) {
-        const textRef = await resRef.text();
-        parsedRefData = parseTelemetryCSV(textRef, `${presetKey}-pro-reference.csv`);
-        setReferenceTelemetry(parsedRefData);
-        const comp = computeLapComparison(parsedDriver, parsedRefData, cfg.track);
-        setLapComparison(comp);
-      } else {
-        setReferenceTelemetry(null);
-        setLapComparison(null);
-      }
-
-      // Compute G-G Friction Circle
-      try {
-        const gg = computeGGFrictionCircle(parsedDriver, parsedRefData);
-        setFrictionCircleData(gg);
-      } catch (errGg) {
-        console.warn("Could not compute G-G friction circle:", errGg);
-      }
-    } catch (err) {
-      console.error("Failed to load preset CSV:", err);
-    }
-  };
-
-  // Initial load Spa preset on mount
-  useEffect(() => {
-    loadPreset("spa");
-  }, []);
-
   // Rotating loading messages
   useEffect(() => {
     if (state !== "loading") return;
@@ -413,7 +283,6 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   // File Upload Handlers
   const processParsedTelemetry = (parsed: ParsedTelemetryFile) => {
     setParsedTelemetry(parsed);
-    setActivePreset("");
 
     // Auto-detect track, car, and sim game from filename
     const lowerName = parsed.filename.toLowerCase();
@@ -1471,41 +1340,6 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
               </div>
             </div>
           )}
-
-          {/* Optional Reference Laps (Secondary) */}
-          <div className="mt-3 pt-3 border-t border-white/5">
-            <div className="text-[11px] text-slate-400 font-medium mb-2 flex items-center justify-between">
-              <span>Quick reference runs:</span>
-              <span className="text-[10px] text-slate-500 font-mono">OPTIONAL</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                className={`px-2.5 py-1.5 rounded-lg border text-left text-xs transition-all ${
-                  activePreset === "redbullring"
-                    ? "border-blue-500/50 bg-blue-500/10 text-white"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20"
-                }`}
-                onClick={() => loadPreset("redbullring")}
-              >
-                <div className="font-semibold truncate">Red Bull Ring (iRacing)</div>
-                <div className="text-[10px] text-slate-400">AMG GT4 · 60 Hz</div>
-              </button>
-
-              <button
-                type="button"
-                className={`px-2.5 py-1.5 rounded-lg border text-left text-xs transition-all ${
-                  activePreset === "spa"
-                    ? "border-blue-500/50 bg-blue-500/10 text-white"
-                    : "border-white/10 bg-white/[0.02] text-slate-300 hover:border-white/20"
-                }`}
-                onClick={() => loadPreset("spa")}
-              >
-                <div className="font-semibold truncate">Spa-Francorchamps</div>
-                <div className="text-[10px] text-slate-400">Ferrari 296 GT3</div>
-              </button>
-            </div>
-          </div>
 
           {/* Section 4: Driver Style & Setup Preferences */}
           <div className="form-section-title">
