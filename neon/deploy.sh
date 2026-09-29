@@ -8,7 +8,10 @@ ROOT="$(dirname "$NEON_DIR")"
 cd "$ROOT"
 
 echo "==> installing dependencies"
-npm install --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund
+# The root app has a pre-existing peer conflict (@neondatabase/auth wants
+# Next >= 16, the app pins Next 14) — legacy resolution matches the
+# already-installed tree.
+npm install --legacy-peer-deps --no-audit --no-fund >/dev/null 2>&1 || npm install --legacy-peer-deps --no-audit --no-fund
 cd "$NEON_DIR"
 npm install --no-audit --no-fund >/dev/null 2>&1 || npm install --no-audit --no-fund
 cd "$ROOT"
