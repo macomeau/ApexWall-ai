@@ -1,4 +1,4 @@
-import type { SavedSetupRecord } from "@/lib/setup-vault";
+import type { SavedSetupRecord } from "./setup-vault";
 
 /** Map a pitwall_setups row (snake_case) to a SavedSetupRecord (camelCase). */
 export function toSetupRecord(row: any): SavedSetupRecord {

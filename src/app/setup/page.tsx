@@ -1,15 +1,32 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSetupById } from "@/lib/cloud-vault";
 import { SavedSetupRecord, saveSetupToVault } from "@/lib/setup-vault";
 import { SetupExportModal } from "@/components/setup/SetupExportModal";
 
 export default function SharedSetupPage() {
-  const params = useParams();
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0B0E14] text-slate-100 flex flex-col items-center justify-center p-6">
+          <div className="w-12 h-12 border-2 border-cyan-400/20 border-t-cyan-400 rounded-full animate-spin mb-4"></div>
+          <div className="font-mono text-xs uppercase tracking-wider text-slate-400">
+            Loading Shared Setup...
+          </div>
+        </div>
+      }
+    >
+      <SharedSetupContent />
+    </Suspense>
+  );
+}
+
+function SharedSetupContent() {
+  const searchParams = useSearchParams();
   const router = useRouter();
-  const id = params?.id as string;
+  const id = searchParams.get("id") || "";
 
   const [setup, setSetup] = useState<SavedSetupRecord | null>(null);
   const [loading, setLoading] = useState(true);

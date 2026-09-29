@@ -109,7 +109,7 @@ export const SetupVaultModal: React.FC<SetupVaultModalProps> = ({
   const handleCopyShareLink = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (typeof window !== "undefined") {
-      const shareUrl = `${window.location.origin}/setup/${id}`;
+      const shareUrl = `${window.location.origin}/setup?id=${id}`;
       navigator.clipboard.writeText(shareUrl);
       setCopiedShareId(id);
       setTimeout(() => setCopiedShareId(null), 2500);

@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules/
 /.pnp
 .pnp.js
 
@@ -26,3 +26,6 @@ Thumbs.db
 
 # typescript
 *.tsbuildinfo
+
+# generated: embedded web assets for the Neon function (rebuilt by neon/deploy.sh)
+neon/api/lib/web-dist.ts
