@@ -214,6 +214,40 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     );
   }, [parsedTelemetry, track, lapComparison, learnedMatch, learnedGeoms]);
 
+  /**
+   * The function runtime kills request bodies around ~280KB (connection
+   * dropped, no response). A full 1500-point telemetry payload is ~500KB, so
+   * saved sessions must be compacted: fewer points + rounded numbers. The
+   * stored 250 points (~24m spacing, like the built-in circuit DB) are plenty
+   * for re-rendering the map and charts on load.
+   */
+  const compactForSave = (value: any): any => {
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return 0;
+      return Math.round(value * 100) / 100;
+    }
+    if (Array.isArray(value)) return value.map(compactForSave);
+    if (value && typeof value === "object") {
+      const out: Record<string, any> = {};
+      for (const k of Object.keys(value)) out[k] = compactForSave(value[k]);
+      return out;
+    }
+    return value;
+  };
+
+  const downsamplePointsForSave = (
+    points: TelemetryPoint[],
+    max = 250
+  ): TelemetryPoint[] => {
+    if (points.length <= max) return points;
+    const step = points.length / max;
+    const out: TelemetryPoint[] = [];
+    for (let i = 0; i < max; i++) out.push(points[Math.floor(i * step)]);
+    const last = points[points.length - 1];
+    if (out[out.length - 1] !== last) out.push(last);
+    return out;
+  };
+
   /** Persist the just-completed analysis to the cloud library. */
   const autoSaveSession = async (
     analysis: TelemetryAnalysisResult,
@@ -256,7 +290,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             steeringScrub: parsed.steeringScrub,
             tyres: parsed.tyreStats,
           },
-          points: parsed.points,
+          points: downsamplePointsForSave(parsed.points),
           anomalies: parsed.detectedAnomalies,
           lapComparison,
           frictionCircle: frictionCircleData,
@@ -266,7 +300,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       const res = await fetch("/api/telemetry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(compactForSave(body)),
       });
       if (!res.ok) throw new Error("save failed");
       setSaveState("saved");

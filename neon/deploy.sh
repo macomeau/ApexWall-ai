@@ -22,7 +22,7 @@ echo "==> embedding web assets"
 node "$NEON_DIR/scripts/embed-web.mjs"
 
 echo "==> resolving deploy credentials"
-export PATH="$PATH:$(npm root -g)/.bin"
+export PATH="$PATH:$(npm root -g)/.bin:$HOME/workspace/.npm-global/bin"
 # NEON_API_KEY may be provided externally (e.g. a pasted project-scoped key).
 # Otherwise use the stored Special-AI credential (custom.neon-apexwall),
 # falling back to the legacy shared entry.
