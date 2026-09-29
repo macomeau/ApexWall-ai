@@ -1,0 +1,41 @@
+{
+  "name": "apexwall",
+  "version": "2.0.0",
+  "description": "ApexWall \u2014 Autonomous Sim Racing Telemetry Analytics, Chassis Engineering & Tactical Pit Strategy",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "telemetry-bridge": "node scripts/telemetry-bridge.js",
+    "serve:legacy": "node server.js"
+  },
+  "dependencies": {
+    "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
+    "@neondatabase/auth": "^0.5.0-beta",
+    "@neondatabase/serverless": "^1.0.2",
+    "@types/jszip": "^3.4.0",
+    "clsx": "^2.1.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jszip": "^3.10.2",
+    "lucide-react": "^1.48.0",
+    "next": "^14.2.35",
+    "openai": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^3.7.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/ws": "^8.18.1",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.4.5"
+  }
+}
