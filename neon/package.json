@@ -1,1 +1,1 @@
-{"dependencies":{"@neon/config":"^1.8.2","@neon/functions":"^0.11.0","@neondatabase/serverless":"^1.0.2","hono":"^4.13.9","openai":"^4.0.0"},"name":"apexwall-neon-function","private":true,"type":"module","version":"1.0.0"}
+{"dependencies":{"@neon/config":"^1.8.2","@neon/env":"^1.4.7","@neon/functions":"^0.11.0","@neondatabase/serverless":"^1.0.2","hono":"^4.13.9","openai":"^4.0.0"},"name":"apexwall-neon-function","private":true,"type":"module","version":"1.0.0"}
