@@ -12,11 +12,103 @@ import {
   getAuthenticTrackGeometry,
 } from "./circuit-geometries";
 
+/** A circuit definition usable by the map builder: built-in or user-learned. */
+export interface MapCircuitDefinition {
+  id?: string;
+  name: string;
+  officialDistance: number;
+  fiaGrade?: string;
+  country?: string;
+  points: { dist: number; x: number; y: number }[];
+  corners: { name: string; shortName?: string; dist: number; x: number; y: number }[];
+  sectors?: { sector: number; dist: number }[];
+  drsZones?: { name: string; start: number; end: number }[];
+}
+
+/** Metadata for a user-learned track (as returned by GET /api/learned-tracks). */
+export interface LearnedTrackMeta {
+  id: string;
+  name: string;
+  matchKey: string;
+  distanceM: number | null;
+  country?: string | null;
+}
+
+/** Full learned track geometry (as returned by GET /api/learned-tracks/:id). */
+export interface LearnedTrackFull extends LearnedTrackMeta {
+  points: { dist: number; x: number; y: number }[];
+  corners: { name: string; shortName?: string; dist: number; x: number; y: number }[];
+  sectors: { sector: number; dist: number }[];
+}
+
+export function learnedTrackToDef(t: LearnedTrackFull): MapCircuitDefinition {
+  return {
+    id: t.id,
+    name: t.name,
+    officialDistance: t.distanceM || 0,
+    fiaGrade: "Learned from telemetry",
+    country: t.country || undefined,
+    points: t.points,
+    corners: t.corners,
+    sectors: t.sectors,
+  };
+}
+
+/** Normalize a track hint for match-key comparison. */
+export function normalizeTrackKey(s: string): string {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Derive a stable match key for a track from the form value, falling back to
+ * the uploaded filename. iRacing filenames look like
+ * "{car}_{track} 2026-09-23 04-16-27.ibt" — strip the car prefix, date stamp
+ * and extension so "mercedesamgevogt3_sebring international 2026-09-23 ..." keys as "sebringinternational".
+ */
+export function deriveTrackMatchKey(track: string, filename: string): string {
+  const t = normalizeTrackKey(track);
+  if (t) return t;
+  let base = (filename || "").replace(/\.[^.]+$/, "");
+  base = base.replace(/\s+\d{4}-\d{2}-\d{2}\s+\d{2}[-:]\d{2}[-:]\d{2}.*$/, "");
+  const us = base.indexOf("_");
+  if (us >= 0) base = base.slice(us + 1);
+  return normalizeTrackKey(base) || normalizeTrackKey(filename);
+}
+
+/** Match a search hint against the user's learned tracks (key, then distance). */
+export function matchLearnedTrackMeta(
+  searchHint: string,
+  totalDist: number | undefined,
+  metas: LearnedTrackMeta[]
+): LearnedTrackMeta | null {
+  const norm = normalizeTrackKey(searchHint);
+  if (norm) {
+    for (const m of metas) {
+      const mk = normalizeTrackKey(m.matchKey);
+      if (mk && (norm.includes(mk) || mk.includes(norm))) return m;
+    }
+  }
+  if (totalDist && totalDist > 1000) {
+    let best: LearnedTrackMeta | null = null;
+    let bestDiff = Infinity;
+    for (const m of metas) {
+      if (!m.distanceM) continue;
+      const diff = Math.abs(m.distanceM - totalDist) / m.distanceM;
+      if (diff < 0.03 && diff < bestDiff) {
+        best = m;
+        bestDiff = diff;
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
 /**
  * High-Precision Interpolation along Official FIA Surveyed Track Coordinates
  */
 function interpolateRealCircuit(
-  def: RealCircuitDefinition,
+  def: { points: { dist: number; x: number; y: number }[]; officialDistance: number },
   targetDist: number,
   telemetryStartDist: number,
   telemetryEndDist: number
@@ -113,27 +205,21 @@ function reconstructAutonomousTrajectory(telemetry: ParsedTelemetryFile): { x: n
 }
 
 /**
- * Generate True FIA Grade Track Map Data synchronized with telemetry.
- * Automatically recognizes official FIA circuits or supports user overrides.
+ * Build a TrackMapData from any circuit definition (built-in authentic
+ * geometry or a user-learned one): interpolate telemetry onto the shape
+ * and match corners / driver apex speeds.
  */
-export function generateTrackMapData(
-  telemetry: ParsedTelemetryFile,
-  trackHint?: string,
-  lapComparison?: LapComparisonSummary | null
+function buildTrackMapFromDefinition(
+  def: MapCircuitDefinition,
+  telemetryPoints: ParsedTelemetryFile["points"],
+  lapComparison: LapComparisonSummary | null | undefined,
+  startDist: number,
+  endDist: number,
+  geometrySource: "authentic" | "learned"
 ): TrackMapData {
-  const telemetryPoints = telemetry.points;
-  const startDist = telemetryPoints[0]?.dist || 0;
-  const endDist = telemetryPoints[telemetryPoints.length - 1]?.dist || 4000;
-  const totalDistance = Math.max(100, endDist - startDist);
-
-  // 1. Identify Authentic FIA Circuit
-  const searchHint = `${trackHint || ""} ${telemetry.filename || ""}`;
-  const realCircuit = getAuthenticTrackGeometry(searchHint, endDist);
-
-  if (realCircuit) {
-    // 2A. Authentic FIA Grade 1 Surveyed Circuit
+    // Map telemetry onto the definition shape
     const points: TrackMapPoint[] = telemetryPoints.map((pt, idx) => {
-      const coord = interpolateRealCircuit(realCircuit, pt.dist, startDist, endDist);
+      const coord = interpolateRealCircuit(def, pt.dist, startDist, endDist);
       const deltaPt = lapComparison?.deltaPoints?.[idx];
 
       return {
@@ -150,7 +236,7 @@ export function generateTrackMapData(
     });
 
     // Match corners and calculate driver apex speeds
-    const corners: TrackCorner[] = realCircuit.corners.map((rc, cIdx) => {
+    const corners: TrackCorner[] = def.corners.map((rc, cIdx) => {
       // Find telemetry point closest to this corner's distance
       let closestPt: TrackMapPoint | null = null;
       let minDiff = Infinity;
@@ -193,23 +279,77 @@ export function generateTrackMapData(
         timeDelta: comp?.timeDelta,
         brakingPointDeltaMeters: comp?.brakingPointDeltaMeters,
         throttleCommitDeltaMeters: comp?.throttleCommitDeltaMeters,
-        verdict: comp?.verdict || (hasTelemetryInCorner ? `Apex Speed: ${Math.round(driverSpeed || 0)} km/h` : "FIA Reference Corner"),
+        verdict: comp?.verdict || (hasTelemetryInCorner ? `Apex Speed: ${Math.round(driverSpeed || 0)} km/h` : geometrySource === "learned" ? "Learned Reference Corner" : "FIA Reference Corner"),
       };
     });
 
     return {
-      circuitKey: realCircuit.id,
-      circuitName: realCircuit.name,
-      country: realCircuit.country,
-      fiaGrade: realCircuit.fiaGrade,
-      totalDistance: realCircuit.officialDistance,
+      circuitKey: def.id,
+      circuitName: def.name,
+      country: def.country,
+      fiaGrade: def.fiaGrade,
+      totalDistance: def.officialDistance,
       points,
-      fullCircuitPoints: realCircuit.points.map((p) => ({ dist: p.dist, x: p.x, y: p.y })),
+      fullCircuitPoints: def.points.map((p) => ({ dist: p.dist, x: p.x, y: p.y })),
       corners,
-      drsZones: realCircuit.drsZones,
-      sectors: realCircuit.sectors,
+      drsZones: def.drsZones,
+      sectors: def.sectors,
       bounds: { minX: 0, maxX: 1000, minY: 0, maxY: 1000 },
+      geometrySource,
     };
+}
+
+/**
+ * Generate True FIA Grade Track Map Data synchronized with telemetry.
+ * Automatically recognizes official FIA circuits or supports user overrides.
+ */
+export function generateTrackMapData(
+  telemetry: ParsedTelemetryFile,
+  trackHint?: string,
+  lapComparison?: LapComparisonSummary | null,
+  learnedDef?: MapCircuitDefinition | null
+): TrackMapData {
+  const telemetryPoints = telemetry.points;
+  const startDist = telemetryPoints[0]?.dist || 0;
+  const endDist = telemetryPoints[telemetryPoints.length - 1]?.dist || 4000;
+  const totalDistance = Math.max(100, endDist - startDist);
+
+  // 1. Identify Authentic FIA Circuit
+  const searchHint = `${trackHint || ""} ${telemetry.filename || ""}`;
+  const realCircuit = getAuthenticTrackGeometry(searchHint, endDist);
+
+  if (realCircuit) {
+    // 2A. Authentic built-in circuit geometry
+    return buildTrackMapFromDefinition(
+      {
+        id: realCircuit.id,
+        name: realCircuit.name,
+        officialDistance: realCircuit.officialDistance,
+        fiaGrade: realCircuit.fiaGrade,
+        country: realCircuit.country,
+        points: realCircuit.points,
+        corners: realCircuit.corners,
+        sectors: realCircuit.sectors,
+        drsZones: realCircuit.drsZones,
+      },
+      telemetryPoints,
+      lapComparison,
+      startDist,
+      endDist,
+      "authentic"
+    );
+  }
+
+  if (learnedDef) {
+    // 2A'. User-learned circuit geometry (auto-saved from earlier telemetry)
+    return buildTrackMapFromDefinition(
+      learnedDef,
+      telemetryPoints,
+      lapComparison,
+      startDist,
+      endDist,
+      "learned"
+    );
   }
 
   // 2B. Universal Kinematic Dead-Reckoning Fallback for Custom Tracks
@@ -295,5 +435,6 @@ export function generateTrackMapData(
     fullCircuitPoints: points.map((p) => ({ dist: p.dist, x: p.x, y: p.y })),
     corners,
     bounds: { minX: 0, maxX: 1000, minY: 0, maxY: 1000 },
+    geometrySource: "reconstructed",
   };
 }

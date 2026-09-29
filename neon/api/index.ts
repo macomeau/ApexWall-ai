@@ -36,6 +36,12 @@ import {
   saveTelemetrySession,
   deleteTelemetrySession,
 } from "../../src/lib/telemetry-handlers";
+import {
+  listLearnedTracks,
+  getLearnedTrack,
+  saveLearnedTrack,
+  deleteLearnedTrack,
+} from "../../src/lib/learned-track-handlers";
 
 const app = new Hono();
 
@@ -206,6 +212,35 @@ app.delete("/api/telemetry", async (c) => {
 
 app.get("/api/telemetry/:id", async (c) => {
   const { status, json } = await getTelemetrySession(
+    await getSessionUserId(c),
+    c.req.param("id")
+  );
+  return c.json(json, status as any);
+});
+
+// ---------- learned-track routes (auto-learned circuit geometries) ----------
+app.get("/api/learned-tracks", async (c) => {
+  const { status, json } = await listLearnedTracks(await getSessionUserId(c));
+  return c.json(json, status as any);
+});
+
+app.post("/api/learned-tracks", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
+  const { status, json } = await saveLearnedTrack(await getSessionUserId(c), body);
+  return c.json(json, status as any);
+});
+
+app.delete("/api/learned-tracks", async (c) => {
+  const { status, json } = await deleteLearnedTrack(
+    await getSessionUserId(c),
+    c.req.query("id")
+  );
+  return c.json(json, status as any);
+});
+
+app.get("/api/learned-tracks/:id", async (c) => {
+  const { status, json } = await getLearnedTrack(
     await getSessionUserId(c),
     c.req.param("id")
   );

@@ -263,5 +263,7 @@ export interface TrackMapData {
   drsZones?: TrackDrsZone[];
   sectors?: TrackSector[];
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /** Where the circuit geometry came from: built-in DB, user-learned, or anonymous reconstruction. */
+  geometrySource?: "authentic" | "learned" | "reconstructed";
 }
 

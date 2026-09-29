@@ -568,6 +568,11 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
                 {data.drsZones.length} DRS ZONES
               </span>
             )}
+            {data.geometrySource === "learned" && (
+              <span className="trackmap-learned-pill" style={{ background: "rgba(167, 139, 250, 0.12)", color: "#A78BFA", fontSize: "10px", padding: "2px 7px", borderRadius: "4px", fontWeight: 700 }}>
+                LEARNED TRACK
+              </span>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <h4 className="trackmap-circuit-name" style={{ margin: 0 }}>{data.circuitName}</h4>

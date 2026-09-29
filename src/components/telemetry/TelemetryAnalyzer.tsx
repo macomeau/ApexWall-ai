@@ -5,9 +5,25 @@ import { parseTelemetryCSV } from "@/lib/telemetry-parser";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
 import { computeLapComparison } from "@/lib/telemetry-comparison";
 import { computeGGFrictionCircle } from "@/lib/telemetry-friction-circle";
-import { generateTrackMapData } from "@/lib/track-map-generator";
+import {
+  generateTrackMapData,
+  learnedTrackToDef,
+  matchLearnedTrackMeta,
+  normalizeTrackKey,
+  deriveTrackMatchKey,
+  LearnedTrackMeta,
+  LearnedTrackFull,
+} from "@/lib/track-map-generator";
+import { getAuthenticTrackGeometry } from "@/lib/circuit-geometries";
+import {
+  IRACING_CARS,
+  IRACING_TRACKS,
+  snapToRoster,
+  splitIracingFilename,
+} from "@/lib/iracing-content";
 import { GGFrictionCircle } from "./GGFrictionCircle";
 import { TrackMap2D } from "./TrackMap2D";
+import { SearchableSelect } from "./SearchableSelect";
 import {
   ParsedTelemetryFile,
   TelemetryAnalysisResult,
@@ -100,11 +116,6 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
-  // 2D Track Map Data (Memoized based on current telemetry, circuit and lap comparison)
-  const trackMapData = useMemo(() => {
-    if (!parsedTelemetry) return null;
-    return generateTrackMapData(parsedTelemetry, track, lapComparison);
-  }, [parsedTelemetry, track, lapComparison]);
 
   // Copy Feedback States
   const [copiedReport, setCopiedReport] = useState(false);
@@ -117,6 +128,25 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+
+  // Auto-learned circuit geometries (synced via Postgres, per user).
+  const [learnedTracks, setLearnedTracks] = useState<LearnedTrackMeta[]>([]);
+  const [learnedGeoms, setLearnedGeoms] = useState<Record<string, LearnedTrackFull>>({});
+  const learnedSaveKeys = useRef<Set<string>>(new Set());
+
+  const refreshLearnedTracks = async () => {
+    if (!user) {
+      setLearnedTracks([]);
+      setLearnedGeoms({});
+      return;
+    }
+    try {
+      const res = await fetch("/api/learned-tracks");
+      if (res.ok) setLearnedTracks(await res.json());
+    } catch {
+      /* best-effort */
+    }
+  };
 
   const refreshLibrary = async () => {
     if (!user) {
@@ -138,8 +168,51 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
 
   useEffect(() => {
     refreshLibrary();
+    refreshLearnedTracks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // 2D Track Map Data (Memoized based on current telemetry, circuit and lap comparison)
+  // Lookup order: built-in authentic geometry -> user's learned tracks -> reconstruction.
+  const learnedMatch = useMemo(() => {
+    if (!parsedTelemetry || learnedTracks.length === 0) return null;
+    const hint = `${track || ""} ${parsedTelemetry.filename || ""}`;
+    const endDist = parsedTelemetry.points[parsedTelemetry.points.length - 1]?.dist;
+    if (getAuthenticTrackGeometry(hint, endDist)) return null; // built-in wins
+    return matchLearnedTrackMeta(hint, endDist, learnedTracks);
+  }, [parsedTelemetry, track, learnedTracks]);
+
+  // Fetch a matched learned track's full geometry on demand (cached per id).
+  useEffect(() => {
+    if (!learnedMatch || !user) return;
+    if (learnedGeoms[learnedMatch.id]) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/learned-tracks/${encodeURIComponent(learnedMatch.id)}`);
+        if (!res.ok) return;
+        const full = (await res.json()) as LearnedTrackFull;
+        if (!cancelled) setLearnedGeoms((g) => ({ ...g, [learnedMatch.id]: full }));
+      } catch {
+        /* best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [learnedMatch, user]);
+
+  const trackMapData = useMemo(() => {
+    if (!parsedTelemetry) return null;
+    const full = learnedMatch ? learnedGeoms[learnedMatch.id] : null;
+    return generateTrackMapData(
+      parsedTelemetry,
+      track,
+      lapComparison,
+      full ? learnedTrackToDef(full) : null
+    );
+  }, [parsedTelemetry, track, lapComparison, learnedMatch, learnedGeoms]);
 
   /** Persist the just-completed analysis to the cloud library. */
   const autoSaveSession = async (
@@ -200,6 +273,70 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       refreshLibrary();
     } catch {
       setSaveState("error");
+    }
+
+    // Auto-learn unknown circuits: persist the reconstructed geometry so the
+    // next analysis of this track is recognized with corner names. Silent,
+    // best-effort, and idempotent per (file, track).
+    try {
+      if (trackMapData && trackMapData.geometrySource === "reconstructed") {
+        const hint = `${track || ""} ${parsed.filename || ""}`;
+        const endDist = parsed.points[parsed.points.length - 1]?.dist;
+        const saveKey = `${parsed.filename}::${normalizeTrackKey(track)}`;
+        if (
+          !learnedSaveKeys.current.has(saveKey) &&
+          !matchLearnedTrackMeta(hint, endDist, learnedTracks)
+        ) {
+          learnedSaveKeys.current.add(saveKey);
+          const shape = trackMapData.fullCircuitPoints ?? trackMapData.points;
+          const total = Math.max(100, trackMapData.totalDistance);
+          // Downsample the shape to ~24 m spacing, like the built-in entries.
+          const target = Math.max(60, Math.min(600, Math.round(total / 24)));
+          const step = Math.max(1, Math.floor(shape.length / target));
+          const points = shape
+            .filter((_, i) => i % step === 0)
+            .map((p) => ({
+              dist: Math.round(p.dist * 10) / 10,
+              x: Math.round(p.x * 10) / 10,
+              y: Math.round(p.y * 10) / 10,
+            }));
+          const corners = (trackMapData.corners || []).map((c) => ({
+            name: c.name,
+            shortName: c.shortName,
+            dist: c.dist,
+            x: c.x,
+            y: c.y,
+          }));
+          const sectors = [
+            { sector: 1, dist: Math.round(total / 3) },
+            { sector: 2, dist: Math.round((2 * total) / 3) },
+            { sector: 3, dist: Math.round(total) },
+          ];
+          const name =
+            track?.trim() ||
+            parsed.filename.replace(/\.[^.]+$/, "").slice(0, 60) ||
+            "Learned circuit";
+          const learnRes = await fetch("/api/learned-tracks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name,
+              matchKey: deriveTrackMatchKey(track, parsed.filename),
+              distanceM: Math.round(endDist || total),
+              points,
+              corners,
+              sectors,
+              source: "telemetry",
+            }),
+          });
+          if (learnRes.ok) {
+            const saved = await learnRes.json();
+            setLearnedTracks((t) => [saved, ...t]);
+          }
+        }
+      }
+    } catch {
+      /* auto-learn is best-effort */
     }
   };
 
@@ -269,6 +406,32 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     }
   };
 
+  // "My garage": distinct cars from the user's saved sessions, most-recent-first.
+  // (For iRacing this is superseded by the full official roster dropdown.)
+  const garageCars = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of library) {
+      const c = (s.car || "").trim();
+      if (c && !seen.has(c.toLowerCase())) {
+        seen.add(c.toLowerCase());
+        out.push(c);
+      }
+    }
+    return out;
+  }, [library]);
+
+  // iRacing has no mods: pre-populated official rosters. The dot marks tracks
+  // with authentic built-in geometry (others use reconstruction/auto-learn).
+  const isIracing = game === "iRacing";
+  const iracingTracksWithGeometry = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of IRACING_TRACKS) {
+      if (getAuthenticTrackGeometry(t)) s.add(t);
+    }
+    return s;
+  }, []);
+
   // Rotating loading messages
   useEffect(() => {
     if (state !== "loading") return;
@@ -331,6 +494,17 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       setGame("iRacing");
     } else if (lowerName.includes("assetto") || lowerName.includes("acc")) {
       setGame("Assetto Corsa Competizione");
+    }
+
+    // iRacing: snap car/track to the official roster from the filename
+    // ("{car}_{track} {date}.ibt"), e.g. mercedesamgevogt3_sebring international
+    // -> Mercedes-AMG GT3 2020 / Sebring International Raceway - International.
+    if (lowerName.includes("iracing") || lowerName.includes(".ibt")) {
+      const { carPart, trackPart } = splitIracingFilename(parsed.filename);
+      const snappedCar = snapToRoster(carPart, IRACING_CARS);
+      if (snappedCar) setCar(snappedCar);
+      const snappedTrack = snapToRoster(trackPart, IRACING_TRACKS);
+      if (snappedTrack) setTrack(snappedTrack);
     }
 
     // Reset reference comparison if it was from a different track
@@ -1100,11 +1274,11 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 <span className="field-hint">Chassis specification</span>
               </label>
               <div className="input-wrapper">
-                <input
+                <SearchableSelect
                   id="telCar"
-                  type="text"
                   value={car}
-                  onChange={(e) => setCar(e.target.value)}
+                  onChange={setCar}
+                  options={isIracing ? IRACING_CARS : garageCars}
                   placeholder="e.g. Ferrari 296 GT3"
                   required
                 />
@@ -1116,14 +1290,35 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 <span className="field-hint">Circuit configuration</span>
               </label>
               <div className="input-wrapper">
-                <input
-                  id="telTrack"
-                  type="text"
-                  value={track}
-                  onChange={(e) => setTrack(e.target.value)}
-                  placeholder="e.g. Spa-Francorchamps GP"
-                  required
-                />
+                {isIracing ? (
+                  <SearchableSelect
+                    id="telTrack"
+                    value={track}
+                    onChange={setTrack}
+                    options={IRACING_TRACKS}
+                    placeholder="e.g. Sebring International Raceway - International"
+                    required
+                    optionBadge={(opt) =>
+                      iracingTracksWithGeometry.has(opt) ? (
+                        <span
+                          title="Authentic track geometry in database"
+                          style={{ color: "#10B981", fontSize: "11px", lineHeight: 1 }}
+                        >
+                          ●
+                        </span>
+                      ) : null
+                    }
+                  />
+                ) : (
+                  <input
+                    id="telTrack"
+                    type="text"
+                    value={track}
+                    onChange={(e) => setTrack(e.target.value)}
+                    placeholder="e.g. Spa-Francorchamps GP"
+                    required
+                  />
+                )}
               </div>
             </div>
           </div>
