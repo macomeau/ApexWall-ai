@@ -14,8 +14,17 @@ import { SavedSetupRecord, getSavedSetups } from "@/lib/setup-vault";
 import { RaceEngineerChat } from "@/components/engineer/RaceEngineerChat";
 import { SetupExportContext } from "@/lib/setup-exporter";
 import { TelemetryAnalysisResult, ParsedTelemetryFile } from "@/types/telemetry";
+import { SessionProvider, useSession } from "@/components/session/SessionContext";
 
 export default function Home() {
+  return (
+    <SessionProvider>
+      <HomeInner />
+    </SessionProvider>
+  );
+}
+
+function HomeInner() {
   const [mode, setMode] = useState<WorkspaceMode>("telemetry");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isVaultOpen, setIsVaultOpen] = useState<boolean>(false);
@@ -26,19 +35,15 @@ export default function Home() {
   const [lastTelemetryResult, setLastTelemetryResult] = useState<TelemetryAnalysisResult | null>(null);
   const [lastTelemetryFile, setLastTelemetryFile] = useState<ParsedTelemetryFile | null>(null);
 
-  const [setupInitialValues, setSetupInitialValues] = useState<{
-    game?: string;
-    car?: string;
-    track?: string;
-    sessionType?: string;
-    weather?: string;
-    trackTemp?: string;
-    airTemp?: string;
-    tyreCompound?: string;
-    fuelLoad?: string;
-    handlingIssue?: string;
-    driverStyle?: string;
-  } | undefined>(undefined);
+  // Shared session spec — car/track/conditions filled in on any tab are
+  // visible on every tab, and persist across visits via localStorage.
+  const session = useSession();
+
+  const scrollTop = () => {
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
 
   // Sync count of saved setups from local storage
   useEffect(() => {
@@ -65,40 +70,31 @@ export default function Home() {
     fuelLoad: string;
     handlingIssue: string;
   }) => {
-    setSetupInitialValues(setupContext);
+    // Spec fields are already shared — just carry the AI diagnosis over.
+    session.updateSession(setupContext);
     setMode("setup");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollTop();
   };
 
   const handleApplyPressures = (pressures: { FL: number; FR: number; RL: number; RR: number }) => {
     const pressureSummary = `Target Cold Pressures: FL ${pressures.FL}, FR ${pressures.FR}, RL ${pressures.RL}, RR ${pressures.RR} psi`;
-    setSetupInitialValues((prev) => ({
-      ...prev,
-      handlingIssue: prev?.handlingIssue
-        ? `${prev.handlingIssue}. Calibrated tyre pressures: FL ${pressures.FL}, FR ${pressures.FR}, RL ${pressures.RL}, RR ${pressures.RR}`
-        : pressureSummary,
-    }));
+    session.setHandlingIssue(
+      session.handlingIssue
+        ? `${session.handlingIssue}. Calibrated tyre pressures: FL ${pressures.FL}, FR ${pressures.FR}, RL ${pressures.RL}, RR ${pressures.RR}`
+        : pressureSummary
+    );
     setMode("setup");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollTop();
   };
 
   const handleApplyFuel = (liters: number) => {
-    setSetupInitialValues((prev) => ({
-      ...prev,
-      fuelLoad: `${liters} L`,
-    }));
+    session.setFuelLoad(`${liters} L`);
     setMode("setup");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollTop();
   };
 
   const handleLoadFromVault = (saved: SavedSetupRecord) => {
-    setSetupInitialValues({
+    session.updateSession({
       game: saved.game,
       car: saved.car,
       track: saved.track,
@@ -109,9 +105,7 @@ export default function Home() {
       handlingIssue: saved.summary || "",
     });
     setMode("setup");
-    if (typeof window !== "undefined") {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    scrollTop();
   };
 
   return (
@@ -124,15 +118,14 @@ export default function Home() {
           onOpenAuth={() => setIsAuthModalOpen(true)}
           savedSetupsCount={savedSetupsCount}
           isLoading={isLoading}
-          activeCar={setupInitialValues?.car || "Ferrari 296 GT3"}
-          activeTrack={setupInitialValues?.track || "Spa-Francorchamps"}
+          activeCar={session.car || "—"}
+          activeTrack={session.track || "—"}
         />
 
         {/* Dynamic Workspace Container */}
         <main className="w-full max-w-[1780px] mx-auto px-3 sm:px-5 py-3">
           <div style={{ display: mode === "setup" ? "block" : "none" }}>
             <SetupGenerator
-              initialValues={setupInitialValues}
               onLoadingChange={setIsLoading}
               onSetupGenerated={setLastGeneratedSetup}
               onDiscussWithEngineer={() => setMode("engineer")}
@@ -157,12 +150,11 @@ export default function Home() {
               telemetryResult={lastTelemetryResult}
               parsedTelemetry={lastTelemetryFile}
               onApplyAdjustmentToSetup={(advice) => {
-                setSetupInitialValues((prev) => ({
-                  ...prev,
-                  handlingIssue: prev?.handlingIssue
-                    ? `${prev.handlingIssue}. Engineer guidance: ${advice.slice(0, 150)}`
-                    : advice.slice(0, 180),
-                }));
+                session.setHandlingIssue(
+                  session.handlingIssue
+                    ? `${session.handlingIssue}. Engineer guidance: ${advice.slice(0, 150)}`
+                    : advice.slice(0, 180)
+                );
               }}
               onSwitchToSetup={() => setMode("setup")}
             />

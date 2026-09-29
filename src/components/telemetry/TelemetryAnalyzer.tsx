@@ -37,6 +37,7 @@ import {
 import { SetupExportModal } from "../setup/SetupExportModal";
 import { saveSetupToVault } from "@/lib/setup-vault";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSession } from "@/components/session/SessionContext";
 
 interface TelemetrySessionMeta {
   id: string;
@@ -79,22 +80,25 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   onTelemetryAnalyzed,
   onDiscussWithEngineer,
 }) => {
-  // Session & Vehicle Spec
-  const [game, setGame] = useState("Assetto Corsa Competizione");
-  const [car, setCar] = useState("");
-  const [track, setTrack] = useState("");
-  const [sessionType, setSessionType] = useState("Practice / Hotlap");
-  const [weather, setWeather] = useState("Dry");
-  const [trackTemp, setTrackTemp] = useState("30°C");
-  const [airTemp, setAirTemp] = useState("22°C");
-  const [tyreCompound, setTyreCompound] = useState("DHE Slick");
-  const [fuelLoad, setFuelLoad] = useState("35 L");
+  // Session & Vehicle Spec — shared across tabs (Setup, Strategy) and persisted.
+  // Set it once here and the Setup tab picks it up automatically.
+  const {
+    game, setGame,
+    car, setCar,
+    track, setTrack,
+    sessionType, setSessionType,
+    weather, setWeather,
+    trackTemp, setTrackTemp,
+    airTemp, setAirTemp,
+    tyreCompound, setTyreCompound,
+    fuelLoad, setFuelLoad,
+    driverStyle, setDriverStyle,
+    handlingIssue, setHandlingIssue,
+  } = useSession();
 
-  // Driver Style & Preferences
-  const [driverStyle, setDriverStyle] = useState("Heavy Trail-Braker");
+  // Driver Style & Preferences (telemetry-tab only)
   const [balancePreference, setBalancePreference] = useState("Neutral Balance");
   const [setupTarget, setSetupTarget] = useState("Qualifying Hotlap (Peak Grip)");
-  const [driverComplaint, setDriverComplaint] = useState("");
 
   // Telemetry Data State
   const [parsedTelemetry, setParsedTelemetry] = useState<ParsedTelemetryFile | null>(null);
@@ -273,7 +277,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
           form: {
             game, car, track, sessionType, weather, trackTemp, airTemp,
             tyreCompound, fuelLoad, driverStyle, balancePreference,
-            setupTarget, driverComplaint,
+            setupTarget, handlingIssue,
           },
           filename: parsed.filename,
           rawCount: parsed.rawCount,
@@ -397,7 +401,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       setDriverStyle(f.driverStyle ?? driverStyle);
       setBalancePreference(f.balancePreference ?? balancePreference);
       setSetupTarget(f.setupTarget ?? setupTarget);
-      setDriverComplaint(f.driverComplaint ?? driverComplaint);
+      // Older saved sessions stored this as `driverComplaint`; accept both.
+      setHandlingIssue(f.handlingIssue ?? (f as any).driverComplaint ?? handlingIssue);
 
       setParsedTelemetry({
         filename: p.filename ?? s.filename ?? "telemetry.csv",
@@ -1001,7 +1006,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         driverStyle,
         balancePreference,
         setupTarget,
-        driverComplaint,
+        handlingIssue,
         summaryMetrics: {
           lapTime: parsedTelemetry.lapTime,
           topSpeed: parsedTelemetry.topSpeed,
@@ -1658,8 +1663,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
               <textarea
                 id="telDriverComplaint"
                 rows={2}
-                value={driverComplaint}
-                onChange={(e) => setDriverComplaint(e.target.value)}
+                value={handlingIssue}
+                onChange={(e) => setHandlingIssue(e.target.value)}
                 placeholder="e.g. Understeer at apex in slow corners, snap oversteer on curb exit"
               />
             </div>

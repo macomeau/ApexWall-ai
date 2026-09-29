@@ -7,21 +7,9 @@ import { SetupMorphModal } from "./SetupMorphModal";
 import { saveSetupToVault } from "@/lib/setup-vault";
 import { ACModIngestor } from "./ACModIngestor";
 import { AssettoCorsaModData } from "@/lib/ac-mod-parser";
+import { useSession } from "@/components/session/SessionContext";
 
 interface SetupGeneratorProps {
-  initialValues?: {
-    game?: string;
-    car?: string;
-    track?: string;
-    sessionType?: string;
-    weather?: string;
-    trackTemp?: string;
-    airTemp?: string;
-    tyreCompound?: string;
-    fuelLoad?: string;
-    handlingIssue?: string;
-    driverStyle?: string;
-  };
   onLoadingChange: (loading: boolean) => void;
   onSetupGenerated?: (setup: any) => void;
   onDiscussWithEngineer?: () => void;
@@ -37,23 +25,25 @@ const loadingMessages = [
 ];
 
 export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
-  initialValues,
   onLoadingChange,
   onSetupGenerated,
   onDiscussWithEngineer,
 }) => {
-  const [game, setGame] = useState("Assetto Corsa Competizione");
-  const [car, setCar] = useState("Ferrari 296 GT3");
-  const [track, setTrack] = useState("Spa-Francorchamps GP");
-  const [sessionType, setSessionType] = useState("Practice");
-  const [weather, setWeather] = useState("Dry");
-  const [trackTemp, setTrackTemp] = useState("32°C");
-  const [airTemp, setAirTemp] = useState("24°C");
-  const [fuelLoad, setFuelLoad] = useState("45 L, 35 laps");
-  const [tyreCompound, setTyreCompound] = useState("Medium Slick");
+  // Session spec is shared with the Telemetry tab and persisted — fill once, use everywhere.
+  const {
+    game, setGame,
+    car, setCar,
+    track, setTrack,
+    sessionType, setSessionType,
+    weather, setWeather,
+    trackTemp, setTrackTemp,
+    airTemp, setAirTemp,
+    fuelLoad, setFuelLoad,
+    tyreCompound, setTyreCompound,
+    driverStyle, setDriverStyle,
+    handlingIssue, setHandlingIssue,
+  } = useSession();
   const [skillLevel, setSkillLevel] = useState("Intermediate");
-  const [driverStyle, setDriverStyle] = useState("Heavy trail-braker, relies on throttle-steering");
-  const [handlingIssue, setHandlingIssue] = useState("Snap oversteer on corner exit under power, mid-corner understeer in slow chicanes");
   const [acModData, setAcModData] = useState<AssettoCorsaModData | null>(null);
 
   const handleModParsed = (mod: AssettoCorsaModData) => {
@@ -74,23 +64,6 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
   const [copied, setCopied] = useState(false);
   const [savedToVault, setSavedToVault] = useState(false);
   const [isMorphModalOpen, setIsMorphModalOpen] = useState(false);
-
-  // Sync initial values when transferred from Telemetry Analyzer
-  useEffect(() => {
-    if (initialValues) {
-      if (initialValues.game) setGame(initialValues.game);
-      if (initialValues.car) setCar(initialValues.car);
-      if (initialValues.track) setTrack(initialValues.track);
-      if (initialValues.sessionType) setSessionType(initialValues.sessionType);
-      if (initialValues.weather) setWeather(initialValues.weather);
-      if (initialValues.trackTemp) setTrackTemp(initialValues.trackTemp);
-      if (initialValues.airTemp) setAirTemp(initialValues.airTemp);
-      if (initialValues.tyreCompound) setTyreCompound(initialValues.tyreCompound);
-      if (initialValues.fuelLoad) setFuelLoad(initialValues.fuelLoad);
-      if (initialValues.handlingIssue) setHandlingIssue(initialValues.handlingIssue);
-      if (initialValues.driverStyle) setDriverStyle(initialValues.driverStyle);
-    }
-  }, [initialValues]);
 
   useEffect(() => {
     if (state !== "loading") return;
