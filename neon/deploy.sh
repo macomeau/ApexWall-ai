@@ -23,13 +23,19 @@ node "$NEON_DIR/scripts/embed-web.mjs"
 
 echo "==> resolving deploy credentials"
 export PATH="$PATH:$(npm root -g)/.bin"
-# NEON_API_KEY may be provided externally (e.g. a project-scoped key for a
-# project the stored credential can't see). Otherwise use the stored one.
+# NEON_API_KEY may be provided externally (e.g. a pasted project-scoped key).
+# Otherwise use the stored Special-AI credential (custom.neon-apexwall),
+# falling back to the legacy shared entry.
 if [ -z "${NEON_API_KEY:-}" ]; then
   export NEON_API_KEY="$(python3 -c "
 import sys; sys.path.insert(0, '/opt/hatch/skills/skill-creator/bin')
 from dynamic_credentials import dynamic_credential_entry
-print(dynamic_credential_entry('custom.neon', 'access_token')['surrogate'])
+for _name in ('custom.neon-apexwall', 'custom.neon'):
+    try:
+        print(dynamic_credential_entry(_name, 'access_token')['surrogate'])
+        break
+    except Exception:
+        continue
 ")"
 fi
 
