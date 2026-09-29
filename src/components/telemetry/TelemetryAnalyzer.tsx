@@ -20,6 +20,18 @@ import {
 } from "@/types/telemetry";
 import { SetupExportModal } from "../setup/SetupExportModal";
 import { saveSetupToVault } from "@/lib/setup-vault";
+import { useAuth } from "@/contexts/AuthContext";
+
+interface TelemetrySessionMeta {
+  id: string;
+  name: string;
+  filename: string | null;
+  game: string | null;
+  car: string | null;
+  track: string | null;
+  lapTime: string | null;
+  createdAt: string;
+}
 
 interface TelemetryAnalyzerProps {
   onLoadingChange: (loading: boolean) => void;
@@ -101,6 +113,164 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const [copiedReport, setCopiedReport] = useState(false);
   const [copiedAdaptive, setCopiedAdaptive] = useState(false);
   const [savedAdaptiveVault, setSavedAdaptiveVault] = useState(false);
+
+  // Cloud Telemetry Library (synced via Postgres — phone <-> computer)
+  const { user } = useAuth();
+  const [library, setLibrary] = useState<TelemetrySessionMeta[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+
+  const refreshLibrary = async () => {
+    if (!user) {
+      setLibrary([]);
+      return;
+    }
+    setLibraryLoading(true);
+    try {
+      const res = await fetch("/api/telemetry");
+      if (res.ok) {
+        setLibrary(await res.json());
+      }
+    } catch {
+      /* library is best-effort */
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshLibrary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  /** Persist the just-completed analysis to the cloud library. */
+  const autoSaveSession = async (
+    analysis: TelemetryAnalysisResult,
+    parsed: ParsedTelemetryFile
+  ) => {
+    if (!user) return; // not signed in — nothing to sync to
+    setSaveState("saving");
+    try {
+      const stamp = new Date().toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const body = {
+        name: `${car} @ ${track} — ${stamp}`,
+        filename: parsed.filename,
+        game,
+        car,
+        track,
+        lapTime: parsed.lapTime,
+        payload: {
+          form: {
+            game, car, track, sessionType, weather, trackTemp, airTemp,
+            tyreCompound, fuelLoad, driverStyle, balancePreference,
+            setupTarget, driverComplaint,
+          },
+          filename: parsed.filename,
+          rawCount: parsed.rawCount,
+          channels: parsed.channels,
+          summary: {
+            lapTime: parsed.lapTime,
+            topSpeed: parsed.topSpeed,
+            minSpeed: parsed.minSpeed,
+            maxLatG: parsed.maxLatG,
+            maxDecelG: parsed.maxDecelG,
+            minCornerSpeeds: parsed.minCornerSpeeds,
+            trailBrakingScore: parsed.trailBrakingScore,
+            throttleSmoothness: parsed.throttleSmoothness,
+            steeringScrub: parsed.steeringScrub,
+            tyres: parsed.tyreStats,
+          },
+          points: parsed.points,
+          anomalies: parsed.detectedAnomalies,
+          lapComparison,
+          frictionCircle: frictionCircleData,
+        },
+        analysis,
+      };
+      const res = await fetch("/api/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setSaveState("saved");
+      refreshLibrary();
+    } catch {
+      setSaveState("error");
+    }
+  };
+
+  /** Load a saved session from the cloud library into the analyzer. */
+  const handleLoadSession = async (id: string) => {
+    setLoadingSessionId(id);
+    try {
+      const res = await fetch(`/api/telemetry/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error("Could not load session.");
+      const s = await res.json();
+      const p = s.payload || {};
+      const f = p.form || {};
+      const sum = p.summary || {};
+
+      setGame(f.game ?? game);
+      setCar(f.car ?? car);
+      setTrack(f.track ?? track);
+      setSessionType(f.sessionType ?? sessionType);
+      setWeather(f.weather ?? weather);
+      setTrackTemp(f.trackTemp ?? trackTemp);
+      setAirTemp(f.airTemp ?? airTemp);
+      setTyreCompound(f.tyreCompound ?? tyreCompound);
+      setFuelLoad(f.fuelLoad ?? fuelLoad);
+      setDriverStyle(f.driverStyle ?? driverStyle);
+      setBalancePreference(f.balancePreference ?? balancePreference);
+      setSetupTarget(f.setupTarget ?? setupTarget);
+      setDriverComplaint(f.driverComplaint ?? driverComplaint);
+
+      setParsedTelemetry({
+        filename: p.filename ?? s.filename ?? "telemetry.csv",
+        rawCount: p.rawCount ?? (p.points || []).length,
+        lapTime: sum.lapTime ?? "",
+        topSpeed: sum.topSpeed ?? 0,
+        minSpeed: sum.minSpeed ?? 0,
+        maxLatG: sum.maxLatG ?? 0,
+        maxDecelG: sum.maxDecelG ?? 0,
+        minCornerSpeeds: sum.minCornerSpeeds ?? [],
+        trailBrakingScore: sum.trailBrakingScore ?? 0,
+        throttleSmoothness: sum.throttleSmoothness ?? 0,
+        steeringScrub: sum.steeringScrub ?? 0,
+        tyreStats: sum.tyres ?? { FL: {}, FR: {}, RL: {}, RR: {} },
+        detectedAnomalies: p.anomalies ?? [],
+        points: p.points ?? [],
+        channels: p.channels ?? [],
+      });
+      setLapComparison(p.lapComparison ?? null);
+      setFrictionCircleData(p.frictionCircle ?? null);
+      setReferenceTelemetry(null);
+      setResult(s.analysis ?? null);
+      setState("result");
+      setSaveState("saved");
+      setErrorMessage("");
+    } catch (err: any) {
+      setErrorMessage(err.message || "Could not load session.");
+    } finally {
+      setLoadingSessionId(null);
+    }
+  };
+
+  const handleDeleteSession = async (id: string) => {
+    if (!window.confirm("Delete this saved session?")) return;
+    try {
+      await fetch(`/api/telemetry?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      refreshLibrary();
+    } catch {
+      /* best-effort */
+    }
+  };
 
   // Load Preset Handler
   const loadPreset = async (presetKey: string) => {
@@ -738,6 +908,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     setState("loading");
     onLoadingChange(true);
     setErrorMessage("");
+    setSaveState("idle");
 
     try {
       const payload = {
@@ -803,6 +974,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       setResult(data);
       setState("result");
       onTelemetryAnalyzed?.(data, parsedTelemetry);
+      // Sync to the cloud library so it opens on phone/computer alike.
+      autoSaveSession(data, parsedTelemetry);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to analyze telemetry.");
       setState("error");
@@ -947,6 +1120,77 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
           <div className="panel-telemetry-badge">
             <span className="badge-dot"></span> MoTeC / CSV Ready
           </div>
+        </div>
+
+        {/* Telemetry Library — cloud-synced sessions (phone <-> computer) */}
+        <div className="telemetry-library">
+          <div className="form-section-title" style={{ marginBottom: 0 }}>
+            <svg className="section-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            Telemetry Library
+            <span className="library-sync-note">
+              {user ? "☁ synced across devices" : "sign in to sync"}
+            </span>
+          </div>
+
+          {saveState === "saving" && (
+            <div className="library-status">Saving session to cloud…</div>
+          )}
+          {saveState === "saved" && state === "result" && (
+            <div className="library-status ok">✓ Saved to cloud library</div>
+          )}
+          {saveState === "error" && (
+            <div className="library-status err">
+              Couldn&apos;t save this session — it will retry on the next analysis.
+            </div>
+          )}
+
+          {!user ? (
+            <div className="library-signin-hint">
+              Sign in to keep analyzed sessions synced between your computer and phone.
+            </div>
+          ) : libraryLoading ? (
+            <div className="library-status">Loading library…</div>
+          ) : library.length === 0 ? (
+            <div className="library-empty">
+              No saved sessions yet — analyze telemetry and it lands here automatically.
+            </div>
+          ) : (
+            <ul className="library-list">
+              {library.map((s) => (
+                <li key={s.id} className="library-item">
+                  <button
+                    type="button"
+                    className="library-load"
+                    onClick={() => handleLoadSession(s.id)}
+                    disabled={loadingSessionId === s.id}
+                    title={s.filename || s.name}
+                  >
+                    <span className="library-name">
+                      {loadingSessionId === s.id ? "Loading…" : s.name}
+                    </span>
+                    <span className="library-meta">
+                      {s.lapTime ? `${s.lapTime} · ` : ""}
+                      {new Date(s.createdAt).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="library-delete"
+                    onClick={() => handleDeleteSession(s.id)}
+                    title="Delete session"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <form onSubmit={handleAnalyzeSubmit} autoComplete="off">

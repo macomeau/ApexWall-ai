@@ -30,6 +30,12 @@ import {
   deleteVaultSetup,
   getSetupForShare,
 } from "../../src/lib/vault-handlers";
+import {
+  listTelemetrySessions,
+  getTelemetrySession,
+  saveTelemetrySession,
+  deleteTelemetrySession,
+} from "../../src/lib/telemetry-handlers";
 
 const app = new Hono();
 
@@ -173,6 +179,35 @@ app.get("/api/vault/:id", async (c) => {
   const { status, json } = await getSetupForShare(
     c.req.param("id"),
     await getSessionUserId(c)
+  );
+  return c.json(json, status as any);
+});
+
+// ---------- telemetry library routes ----------
+app.get("/api/telemetry", async (c) => {
+  const { status, json } = await listTelemetrySessions(await getSessionUserId(c));
+  return c.json(json, status as any);
+});
+
+app.post("/api/telemetry", async (c) => {
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
+  const { status, json } = await saveTelemetrySession(await getSessionUserId(c), body);
+  return c.json(json, status as any);
+});
+
+app.delete("/api/telemetry", async (c) => {
+  const { status, json } = await deleteTelemetrySession(
+    await getSessionUserId(c),
+    c.req.query("id")
+  );
+  return c.json(json, status as any);
+});
+
+app.get("/api/telemetry/:id", async (c) => {
+  const { status, json } = await getTelemetrySession(
+    await getSessionUserId(c),
+    c.req.param("id")
   );
   return c.json(json, status as any);
 });
