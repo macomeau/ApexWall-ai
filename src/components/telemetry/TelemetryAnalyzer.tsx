@@ -266,6 +266,36 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     return out;
   };
 
+  /**
+   * Downsample a friction-circle scatter for the save payload. The circle is
+   * one GGPoint per telemetry sample (~27k points ≈ 1.7MB at 360Hz) — 250
+   * points re-renders the scatter identically.
+   */
+  const slimFrictionCircleForSave = <T extends { points?: unknown[] }>(
+    gg: T | null | undefined
+  ): T | null | undefined => {
+    if (!gg || !Array.isArray(gg.points)) return gg;
+    return { ...gg, points: downsampleArrayForSave(gg.points as unknown[]) };
+  };
+
+  /** Downsample every full-resolution array inside a lap comparison. */
+  const slimLapComparisonForSave = <
+    T extends { deltaPoints?: unknown[]; frictionCircle?: unknown }
+  >(
+    lc: T | null | undefined
+  ): T | null | undefined => {
+    if (!lc) return lc;
+    return {
+      ...lc,
+      deltaPoints: Array.isArray(lc.deltaPoints)
+        ? downsampleArrayForSave(lc.deltaPoints as unknown[])
+        : lc.deltaPoints,
+      frictionCircle: slimFrictionCircleForSave(
+        lc.frictionCircle as { points?: unknown[] } | null | undefined
+      ),
+    };
+  };
+
   /** Persist the just-completed analysis to the cloud library. */
   const autoSaveSession = async (
     analysis: TelemetryAnalysisResult,
@@ -312,15 +342,20 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
           anomalies: parsed.detectedAnomalies,
           // deltaPoints is full-resolution (one entry per telemetry point, 9
           // numeric fields each ≈ 270KB alone) — downsample it like points.
-          lapComparison: lapComparison
-            ? {
-                ...lapComparison,
-                deltaPoints: downsampleArrayForSave(lapComparison.deltaPoints),
-              }
-            : lapComparison,
-          frictionCircle: frictionCircleData,
+          // Same for the friction-circle scatters (one GGPoint per sample ≈
+          // 1.7MB at 360Hz, present 3×: payload, payload.lapComparison, and
+          // analysis). Everything must stay well under the ~280KB
+          // request-body kill threshold or the save silently fails.
+          lapComparison: slimLapComparisonForSave(lapComparison),
+          frictionCircle: slimFrictionCircleForSave(frictionCircleData),
         },
-        analysis,
+        analysis: analysis
+          ? {
+              ...analysis,
+              lapComparison: slimLapComparisonForSave(analysis.lapComparison),
+              frictionCircle: slimFrictionCircleForSave(analysis.frictionCircle),
+            }
+          : analysis,
       };
       const res = await fetch("/api/telemetry", {
         method: "POST",
