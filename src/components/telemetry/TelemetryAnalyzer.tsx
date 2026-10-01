@@ -429,6 +429,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         filename: p.filename ?? s.filename ?? "telemetry.csv",
         rawCount: p.rawCount ?? (p.points || []).length,
         lapTime: sum.lapTime ?? "",
+        lapNumber: p.lapNumber ?? sum.lapNumber ?? 1,
         topSpeed: sum.topSpeed ?? 0,
         minSpeed: sum.minSpeed ?? 0,
         maxLatG: sum.maxLatG ?? 0,
@@ -1033,6 +1034,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         handlingIssue,
         summaryMetrics: {
           lapTime: parsedTelemetry.lapTime,
+          lapNumber: parsedTelemetry.lapNumber,
           topSpeed: aiSpeed(parsedTelemetry.topSpeed),
           minSpeed: aiSpeed(parsedTelemetry.minSpeed),
           maxLatG: parsedTelemetry.maxLatG,
@@ -1098,7 +1100,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     text += `${"=".repeat(50)}\n\n`;
     text += `[VERDICT & PACE DELTA]\n`;
     text += `Overall Score: ${result.overallScore}/100\n`;
-    text += `Observed Lap: ${result.lapTimeObserved || parsedTelemetry?.lapTime}\n`;
+    text += `Observed Lap: ${result.lapTimeObserved || (parsedTelemetry ? `Lap ${parsedTelemetry.lapNumber} ${parsedTelemetry.lapTime}` : "")}\n`;
     text += `Achievable Potential Delta: ${result.estimatedTimeLost || "-0.85s"}\n`;
     text += `Primary Limiter: ${result.primaryLimiter}\n\n`;
 
@@ -1579,7 +1581,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                   <div>
                     <div className="file-name">{parsedTelemetry.filename}</div>
                     <div className="file-meta">
-                      {parsedTelemetry.rawCount.toLocaleString()} telemetry points · Lap Time: {parsedTelemetry.lapTime}
+                      {parsedTelemetry.rawCount.toLocaleString()} telemetry points · Lap {parsedTelemetry.lapNumber}: {parsedTelemetry.lapTime}
                     </div>
                   </div>
                 </div>

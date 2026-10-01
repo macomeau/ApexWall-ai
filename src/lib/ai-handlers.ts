@@ -507,7 +507,7 @@ Driver Style: ${driverStyle || "Heavy Trail-Braker"} | Balance Target: ${balance
 Driver Complaint: ${driverComplaint || "Analyze overall lap pace, entry stability, and apex rotation"}
 
 === METRICS ===
-Lap Time: ${summaryMetrics?.lapTime || "N/A"} | Top Speed: ${summaryMetrics?.topSpeed || "N/A"} ${spdU(units)}
+Lap Time: ${summaryMetrics?.lapTime || "N/A"}${summaryMetrics?.lapNumber ? ` (Lap ${summaryMetrics.lapNumber}, fastest complete lap in file)` : ""} | Top Speed: ${summaryMetrics?.topSpeed || "N/A"} ${spdU(units)}
 Trail-Braking Score: ${summaryMetrics?.trailBrakingScore ?? 75}/100 | Throttle Score: ${summaryMetrics?.throttleSmoothness ?? 80}/100 | Scrub Index: ${summaryMetrics?.steeringScrub ?? 70}/100
 Peak Braking Decel: ${summaryMetrics?.maxDecelG ?? 1.8} G | Peak Lat Accel: ${summaryMetrics?.maxLatG ?? 2.2} G
 Tyres (FL/FR/RL/RR): ${summaryMetrics?.tyres?.FL?.temp || uTemp(84, units)}/${summaryMetrics?.tyres?.FR?.temp || uTemp(86, units)}/${summaryMetrics?.tyres?.RL?.temp || uTemp(82, units)}/${summaryMetrics?.tyres?.RR?.temp || uTemp(83, units)}

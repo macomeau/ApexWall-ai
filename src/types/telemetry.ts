@@ -58,6 +58,7 @@ export interface ParsedTelemetryFile {
   filename: string;
   rawCount: number;
   lapTime: string;
+  lapNumber: number;
   topSpeed: number;
   minSpeed: number;
   maxLatG: number;

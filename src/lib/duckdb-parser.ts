@@ -183,6 +183,7 @@ export async function parseDuckDBTelemetry(file: File): Promise<ParsedTelemetryF
         filename: file.name,
         rawCount: points.length,
         lapTime: lapTimeFormatted,
+        lapNumber: 1,
         topSpeed: Math.round(maxSpeed),
         minSpeed: minSpeed === 999 ? 75 : Math.round(minSpeed),
         maxLatG: Math.round(maxLatG * 100) / 100,

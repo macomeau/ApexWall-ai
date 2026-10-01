@@ -1,5 +1,35 @@
 import { ParsedTelemetryFile, TelemetryPoint, TelemetryAnomaly, MinCornerSpeed } from "@/types/telemetry";
 
+/**
+ * Parse a telemetry CSV into a single analyzed lap.
+ *
+ * Handles two families of exports:
+ *  - Mu / iRacing-style: metadata rows up top, a units row under the header,
+ *    iRacing variable names (SessionTime, LapDist, Speed [m/s], Throttle [%],
+ *    Brake [%], SteeringWheelAngle [rad], Engine0_RPM [rad/s], LFtempM,
+ *    LFpressure [kPa], Lap, ...), 360 Hz.
+ *  - MoTeC-style: plain header + data, km/h, deg, psi assumptions.
+ *
+ * Column resolution is exact-match first (normalized), fuzzy second, and
+ * unit conversions are driven by the units row when present. When a Lap
+ * column exists, the fastest complete lap is analyzed instead of the whole
+ * session file.
+ */
+
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function findColumn(headers: string[], candidates: Array<{ t: "exact" | "has"; v: string }>): number | null {
+  const normalized = headers.map(norm);
+  for (const c of candidates) {
+    for (let i = 0; i < headers.length; i++) {
+      if (c.t === "exact" ? normalized[i] === c.v : normalized[i].includes(c.v)) return i;
+    }
+  }
+  return null;
+}
+
+const num = (v: number | undefined | null) => (v == null || isNaN(v) ? 0 : v);
+
 export function parseTelemetryCSV(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile {
   const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length < 5) {
@@ -11,100 +41,201 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
   if (lines[0].includes(";") && !lines[0].includes(",")) delimiter = ";";
   else if (lines[0].includes("\t")) delimiter = "\t";
 
-  // Find header row (some MoTeC CSVs have metadata rows at the top)
+  // Find header row (some exports have metadata rows at the top, e.g. Mu)
   let headerIndex = 0;
   for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const row = lines[i].toLowerCase();
-    if (row.includes("speed") || row.includes("throttle") || row.includes("brake") || row.includes("time") || row.includes("dist")) {
+    if (row.includes("speed") && (row.includes("throttle") || row.includes("brake")) && (row.includes("time") || row.includes("dist"))) {
       headerIndex = i;
       break;
     }
   }
 
   const rawHeaders = lines[headerIndex].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ""));
-  const headerMap: Record<string, number> = {};
 
-  rawHeaders.forEach((h, idx) => {
-    const lower = h.toLowerCase();
-    if (lower === "time" || lower.includes("sessiontime") || lower.includes("laptime")) headerMap.time = idx;
-    else if (lower === "distance" || lower === "dist" || lower.includes("lapdist")) headerMap.dist = idx;
-    else if (lower.includes("speed") || lower === "groundspeed" || lower === "kmh" || lower === "mph") headerMap.speed = idx;
-    else if (lower.includes("throttle") || lower.includes("gas") || lower.includes("accel")) headerMap.throttle = idx;
-    else if (lower.includes("brake")) headerMap.brake = idx;
-    else if (lower.includes("steer")) headerMap.steer = idx;
-    else if (lower === "gear") headerMap.gear = idx;
-    else if (lower.includes("rpm")) headerMap.rpm = idx;
-    else if (lower.includes("latg") || lower.includes("g_lat") || lower.includes("accx")) headerMap.latG = idx;
-    else if (lower.includes("longg") || lower.includes("g_long") || lower.includes("accy")) headerMap.longG = idx;
-    else if (lower.includes("fl") && lower.includes("temp")) headerMap.tempFL = idx;
-    else if (lower.includes("fr") && lower.includes("temp")) headerMap.tempFR = idx;
-    else if (lower.includes("rl") && lower.includes("temp")) headerMap.tempRL = idx;
-    else if (lower.includes("rr") && lower.includes("temp")) headerMap.tempRR = idx;
-    else if (lower.includes("fl") && lower.includes("press")) headerMap.pressFL = idx;
-    else if (lower.includes("fr") && lower.includes("press")) headerMap.pressFR = idx;
-    else if (lower.includes("rl") && lower.includes("press")) headerMap.pressRL = idx;
-    else if (lower.includes("rr") && lower.includes("press")) headerMap.pressRR = idx;
-  });
-
-  const parsedPoints: TelemetryPoint[] = [];
-  const dataLines = lines.slice(headerIndex + 1);
-
-  for (let i = 0; i < dataLines.length; i++) {
-    const parts = dataLines[i].split(delimiter).map(p => parseFloat(p.trim()) || 0);
-    if (parts.length < 2) continue;
-
-    const time = headerMap.time != null ? parts[headerMap.time] : i * 0.05;
-    const dist = headerMap.dist != null ? parts[headerMap.dist] : i * 15;
-    let speed = headerMap.speed != null ? parts[headerMap.speed] : 0;
-    let throttle = headerMap.throttle != null ? parts[headerMap.throttle] : 0;
-    let brake = headerMap.brake != null ? parts[headerMap.brake] : 0;
-    let steer = headerMap.steer != null ? parts[headerMap.steer] : 0;
-    let gear = headerMap.gear != null ? Math.round(parts[headerMap.gear]) : 3;
-    let rpm = headerMap.rpm != null ? Math.round(parts[headerMap.rpm]) : 6500;
-    let latG = headerMap.latG != null ? parts[headerMap.latG] : 0;
-    let longG = headerMap.longG != null ? parts[headerMap.longG] : 0;
-
-    // Normalize pedal inputs if 0..1 scale
-    if (throttle > 0 && throttle <= 1.05 && brake <= 1.05) {
-      throttle = Math.round(throttle * 100);
-      brake = Math.round(brake * 100);
-    } else {
-      throttle = Math.min(100, Math.max(0, Math.round(throttle)));
-      brake = Math.min(100, Math.max(0, Math.round(brake)));
+  // Units row: Mu/iRacing exports put a units row directly under the header
+  // (C, kPa, m, m/s, rad, ...). It is mostly non-numeric, unlike data rows.
+  let units: string[] = [];
+  let dataStart = headerIndex + 1;
+  if (dataStart < lines.length) {
+    const probe = lines[dataStart].split(delimiter);
+    let numeric = 0, total = 0;
+    for (const c of probe) {
+      const s = c.trim();
+      if (!s) continue;
+      total++;
+      if (s !== "" && !isNaN(Number(s))) numeric++;
     }
+    if (total > 0 && numeric / total < 0.5) {
+      units = probe.map(c => c.trim());
+      dataStart++;
+    }
+  }
+  const unitOf = (col: number | null): string =>
+    col == null ? "" : (units[col] || "").toLowerCase().trim();
 
-    parsedPoints.push({
-      time: Number(time.toFixed(3)),
-      dist: Math.round(dist),
-      speed: Math.round(speed),
-      throttle,
-      brake,
-      steer: Number(steer.toFixed(1)),
-      gear: Math.max(1, Math.min(8, gear)),
-      rpm,
-      latG: Number(latG.toFixed(2)),
-      longG: Number(longG.toFixed(2)),
-      tempFL: headerMap.tempFL != null ? Number(parts[headerMap.tempFL].toFixed(1)) : 84.0,
-      tempFR: headerMap.tempFR != null ? Number(parts[headerMap.tempFR].toFixed(1)) : 86.5,
-      tempRL: headerMap.tempRL != null ? Number(parts[headerMap.tempRL].toFixed(1)) : 81.8,
-      tempRR: headerMap.tempRR != null ? Number(parts[headerMap.tempRR].toFixed(1)) : 83.2,
-      pressFL: headerMap.pressFL != null ? Number(parts[headerMap.pressFL].toFixed(2)) : 27.2,
-      pressFR: headerMap.pressFR != null ? Number(parts[headerMap.pressFR].toFixed(2)) : 27.5,
-      pressRL: headerMap.pressRL != null ? Number(parts[headerMap.pressRL].toFixed(2)) : 26.8,
-      pressRR: headerMap.pressRR != null ? Number(parts[headerMap.pressRR].toFixed(2)) : 27.0,
+  // ---- Column resolution: exact (normalized) first, fuzzy fallback second ----
+  const E = (v: string) => ({ t: "exact" as const, v });
+  const H = (v: string) => ({ t: "has" as const, v });
+  const col = {
+    time: findColumn(rawHeaders, [E("sessiontime"), E("time"), H("laptime")]),
+    dist: findColumn(rawHeaders, [E("lapdist"), E("distance"), E("dist"), H("lapdist")]),
+    speed: findColumn(rawHeaders, [E("speed"), E("groundspeed"), E("kmh"), E("kph"), E("mph"), H("speed")]),
+    throttle: findColumn(rawHeaders, [E("throttle"), H("throttle"), H("accel"), H("gas")]),
+    brake: findColumn(rawHeaders, [E("brake"), H("brake")]),
+    steer: findColumn(rawHeaders, [E("steeringwheelangle"), H("steer")]),
+    gear: findColumn(rawHeaders, [E("gear")]),
+    // Engine0_RPM is the trustworthy engine-speed signal in Mu exports (rad/s,
+    // mislabeled as rpm); the plain RPM column often carries junk.
+    rpm: findColumn(rawHeaders, [E("engine0rpm"), E("rpm"), H("rpm")]),
+    latG: findColumn(rawHeaders, [E("lataccel"), H("latg"), H("glat"), H("accx")]),
+    longG: findColumn(rawHeaders, [E("longaccel"), H("longg"), H("glong"), H("accy")]),
+    tempFL: findColumn(rawHeaders, [E("lftempm"), E("fltemp"), H("fltemp")]),
+    tempFR: findColumn(rawHeaders, [E("rftempm"), E("frtemp"), H("frtemp")]),
+    tempRL: findColumn(rawHeaders, [E("lrtempm"), E("rltemp"), H("rltemp")]),
+    tempRR: findColumn(rawHeaders, [E("rrtempm"), H("rrtemp")]),
+    pressFL: findColumn(rawHeaders, [E("lfpressure"), E("flpressure"), H("flpress")]),
+    pressFR: findColumn(rawHeaders, [E("rfpressure"), E("frpressure"), H("frpress")]),
+    pressRL: findColumn(rawHeaders, [E("lrpressure"), E("rlpressure"), H("rlpress")]),
+    pressRR: findColumn(rawHeaders, [E("rrpressure"), H("rrpress")]),
+    lap: findColumn(rawHeaders, [E("lap")]),
+  };
+
+  // ---- Unit conversion factors into canonical units (km/h, m, deg, psi, C, s) ----
+  const speedU = unitOf(col.speed);
+  const speedF = speedU.startsWith("m/s") ? 3.6 : speedU === "mph" ? 1.60934 : 1;
+  const distU = unitOf(col.dist);
+  const distF = distU === "km" ? 1000 : distU === "mm" ? 0.001 : distU === "cm" ? 0.01
+    : distU === "ft" ? 0.3048 : distU === "mi" ? 1609.34 : 1;
+  const steerU = unitOf(col.steer);
+  const steerF = steerU === "rad" ? 57.2958 : 1;
+  const pressU = unitOf(col.pressFL ?? col.pressFR ?? col.pressRL ?? col.pressRR);
+  const pressF = pressU === "kpa" ? 0.145038 : pressU === "pa" ? 0.000145038
+    : pressU === "bar" ? 14.5038 : 1; // default: psi
+  const tempU = unitOf(col.tempFL ?? col.tempFR ?? col.tempRL ?? col.tempRR);
+  const tempF = (v: number) => tempU === "f" ? (v - 32) * 5 / 9 : v;
+  const timeU = unitOf(col.time);
+  const timeF = timeU === "ms" ? 0.001 : timeU === "min" ? 60 : timeU === "hr" ? 3600 : 1;
+  // Pedals: Mu/iRacing exports carry an explicit % unit; otherwise 0..1 means fraction
+  const thrPct = unitOf(col.throttle).includes("%");
+  const brkPct = unitOf(col.brake).includes("%");
+  const toPct = (v: number, isPctUnit: boolean) =>
+    Math.min(100, Math.max(0, Math.round(isPctUnit || v > 1.05 ? v : v * 100)));
+
+  interface RawRow {
+    t: number; lap: number; dist: number; speed: number; thr: number; brk: number;
+    steer: number; gear: number; rpm: number; latG: number; longG: number;
+    tFL: number; tFR: number; tRL: number; tRR: number;
+    pFL: number; pFR: number; pRL: number; pRR: number;
+  }
+  const rows: RawRow[] = [];
+  const get = (cells: number[], c: number | null) => (c == null ? NaN : cells[c]);
+
+  for (let i = dataStart; i < lines.length; i++) {
+    const raw = lines[i].split(delimiter);
+    if (raw.length < 2) continue;
+    // Skip non-data rows (stray text, repeated headers, footers)
+    let numeric = 0, total = 0;
+    const cells = new Array(raw.length);
+    for (let k = 0; k < raw.length; k++) {
+      const s = raw[k].trim();
+      if (!s) { cells[k] = NaN; continue; }
+      total++;
+      const v = Number(s);
+      if (!isNaN(v)) { numeric++; cells[k] = v; } else cells[k] = NaN;
+    }
+    if (total === 0 || numeric / total < 0.5) continue;
+
+    const t = num(get(cells, col.time)) * timeF;
+    // Without a time column, synthesize from row index at 20 Hz
+    const time = col.time != null ? t : (rows.length * 0.05);
+    rows.push({
+      t: time,
+      lap: col.lap != null ? Math.round(num(get(cells, col.lap))) : -1,
+      dist: num(get(cells, col.dist)) * distF,
+      speed: num(get(cells, col.speed)) * speedF,
+      thr: toPct(num(get(cells, col.throttle)), thrPct),
+      brk: toPct(num(get(cells, col.brake)), brkPct),
+      steer: num(get(cells, col.steer)) * steerF,
+      gear: col.gear != null ? Math.max(1, Math.min(8, Math.round(num(get(cells, col.gear)))) || 1) : 3,
+      rpm: num(get(cells, col.rpm)),
+      latG: num(get(cells, col.latG)),
+      longG: num(get(cells, col.longG)),
+      tFL: tempF(num(get(cells, col.tempFL))), tFR: tempF(num(get(cells, col.tempFR))),
+      tRL: tempF(num(get(cells, col.tempRL))), tRR: tempF(num(get(cells, col.tempRR))),
+      pFL: num(get(cells, col.pressFL)) * pressF, pFR: num(get(cells, col.pressFR)) * pressF,
+      pRL: num(get(cells, col.pressRL)) * pressF, pRR: num(get(cells, col.pressRR)) * pressF,
     });
   }
 
-  if (parsedPoints.length === 0) {
+  if (rows.length === 0) {
     throw new Error("Could not parse numeric telemetry data from the file.");
   }
 
-  // Calculate Lap Time
-  const startTime = parsedPoints[0].time;
-  const endTime = parsedPoints[parsedPoints.length - 1].time;
-  const totalDuration = endTime - startTime > 5 ? (endTime - startTime) : 137.482;
-  const minutes = Math.floor(totalDuration / 60);
-  const seconds = (totalDuration % 60).toFixed(3);
+  // ---- Lap selection: fastest complete lap when a Lap column exists ----
+  let lapRows = rows;
+  let lapNumber = 1;
+  if (col.lap != null) {
+    const groups = new Map<number, RawRow[]>();
+    for (const r of rows) {
+      const g = groups.get(r.lap) ?? [];
+      g.push(r);
+      groups.set(r.lap, g);
+    }
+    const hasRealLaps = Array.from(groups.keys()).some(l => l > 0);
+    let best: RawRow[] | null = null;
+    let bestDur = Infinity;
+    let mostPoints: RawRow[] | null = null;
+    groups.forEach((g, lap) => {
+      if (hasRealLaps && lap <= 0) return; // skip out-lap / pit rows
+      if (g.length < 60) return;
+      if (!mostPoints || g.length > mostPoints.length) mostPoints = g;
+      let mn = Infinity, mx = -Infinity;
+      for (const r of g) { if (r.t < mn) mn = r.t; if (r.t > mx) mx = r.t; }
+      const dur = mx - mn;
+      if (dur >= 15 && dur < bestDur) { bestDur = dur; best = g; }
+    });
+    const chosen = best ?? mostPoints ?? rows;
+    lapRows = chosen;
+    lapNumber = chosen[0]?.lap > 0 ? chosen[0].lap : 1;
+  }
+
+  // Engine speed sanity: Mu labels Engine0_RPM as "rpm" but emits rad/s.
+  // Real rpm traces peak well above 1500; rad/s traces never do.
+  let rpmMax = 0;
+  for (const r of lapRows) if (r.rpm > rpmMax) rpmMax = r.rpm;
+  const rpmF = rpmMax > 0 && rpmMax < 1500 ? 9.5493 : 1;
+
+  // Rebase time to lap start so deltas are lap-relative
+  const t0 = lapRows[0].t;
+  const parsedPoints: TelemetryPoint[] = lapRows.map(r => ({
+    time: Number((r.t - t0).toFixed(3)),
+    dist: Math.round(r.dist),
+    speed: Math.round(r.speed),
+    throttle: r.thr,
+    brake: r.brk,
+    steer: Number(r.steer.toFixed(1)),
+    gear: r.gear,
+    rpm: Math.round(r.rpm * rpmF),
+    latG: Number(r.latG.toFixed(2)),
+    longG: Number(r.longG.toFixed(2)),
+    tempFL: col.tempFL != null ? Number(r.tFL.toFixed(1)) : 84.0,
+    tempFR: col.tempFR != null ? Number(r.tFR.toFixed(1)) : 86.5,
+    tempRL: col.tempRL != null ? Number(r.tRL.toFixed(1)) : 81.8,
+    tempRR: col.tempRR != null ? Number(r.tRR.toFixed(1)) : 83.2,
+    pressFL: col.pressFL != null ? Number(r.pFL.toFixed(2)) : 27.2,
+    pressFR: col.pressFR != null ? Number(r.pFR.toFixed(2)) : 27.5,
+    pressRL: col.pressRL != null ? Number(r.pRL.toFixed(2)) : 26.8,
+    pressRR: col.pressRR != null ? Number(r.pRR.toFixed(2)) : 27.0,
+  }));
+
+  // Lap time from the selected lap's own clock
+  const totalDuration = parsedPoints.length > 1
+    ? parsedPoints[parsedPoints.length - 1].time - parsedPoints[0].time
+    : 0;
+  const lapSecs = totalDuration > 5 ? totalDuration : 137.482;
+  const minutes = Math.floor(lapSecs / 60);
+  const seconds = (lapSecs % 60).toFixed(3);
   const lapTimeFormatted = `${minutes}:${seconds.padStart(6, "0")}`;
 
   // Extract statistical metrics across full raw dataset for 100% accuracy
@@ -203,6 +334,7 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
     filename,
     rawCount: parsedPoints.length,
     lapTime: lapTimeFormatted,
+    lapNumber,
     topSpeed,
     minSpeed,
     maxLatG: Number(maxLatG.toFixed(2)),
@@ -214,6 +346,6 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
     tyreStats,
     detectedAnomalies,
     points: downsampled,
-    channels: Object.keys(headerMap),
+    channels: Object.keys(col).filter(k => (col as Record<string, number | null>)[k] != null),
   };
 }
