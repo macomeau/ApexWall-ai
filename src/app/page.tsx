@@ -15,12 +15,15 @@ import { RaceEngineerChat } from "@/components/engineer/RaceEngineerChat";
 import { SetupExportContext } from "@/lib/setup-exporter";
 import { TelemetryAnalysisResult, ParsedTelemetryFile } from "@/types/telemetry";
 import { SessionProvider, useSession } from "@/components/session/SessionContext";
+import { UnitsProvider, useUnits } from "@/components/session/UnitsContext";
 
 export default function Home() {
   return (
-    <SessionProvider>
-      <HomeInner />
-    </SessionProvider>
+    <UnitsProvider>
+      <SessionProvider>
+        <HomeInner />
+      </SessionProvider>
+    </UnitsProvider>
   );
 }
 
@@ -38,6 +41,7 @@ function HomeInner() {
   // Shared session spec — car/track/conditions filled in on any tab are
   // visible on every tab, and persist across visits via localStorage.
   const session = useSession();
+  const { fmt } = useUnits();
 
   const scrollTop = () => {
     if (typeof window !== "undefined") {
@@ -77,10 +81,12 @@ function HomeInner() {
   };
 
   const handleApplyPressures = (pressures: { FL: number; FR: number; RL: number; RR: number }) => {
-    const pressureSummary = `Target Cold Pressures: FL ${pressures.FL}, FR ${pressures.FR}, RL ${pressures.RL}, RR ${pressures.RR} psi`;
+    // Calculator outputs psi-native numbers; render them in the user's units.
+    const p = (psi: number) => fmt.pressurePsi(psi);
+    const pressureSummary = `Target Cold Pressures: FL ${p(pressures.FL)}, FR ${p(pressures.FR)}, RL ${p(pressures.RL)}, RR ${p(pressures.RR)}`;
     session.setHandlingIssue(
       session.handlingIssue
-        ? `${session.handlingIssue}. Calibrated tyre pressures: FL ${pressures.FL}, FR ${pressures.FR}, RL ${pressures.RL}, RR ${pressures.RR}`
+        ? `${session.handlingIssue}. Calibrated tyre pressures: FL ${p(pressures.FL)}, FR ${p(pressures.FR)}, RL ${p(pressures.RL)}, RR ${p(pressures.RR)}`
         : pressureSummary
     );
     setMode("setup");

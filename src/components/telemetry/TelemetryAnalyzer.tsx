@@ -38,6 +38,8 @@ import { SetupExportModal } from "../setup/SetupExportModal";
 import { saveSetupToVault } from "@/lib/setup-vault";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSession } from "@/components/session/SessionContext";
+import { useUnits } from "@/components/session/UnitsContext";
+import { kmhToMph, psiToBar, cToF } from "@/lib/units";
 
 interface TelemetrySessionMeta {
   id: string;
@@ -74,6 +76,20 @@ const telLoadingMessages = [
   "Chief Race Engineer formulating adaptive setup…",
 ];
 
+/** Convert parser-native (metric) values to the active unit system for AI context. */
+const aiSpeedFor = (units: string) => (kmh: number) => Math.round(units === "imperial" ? kmhToMph(kmh) : kmh);
+const aiTyresFor = (units: string) => (ts: any) => {
+  if (!ts) return ts;
+  const out: Record<string, { temp: string; pressure: string }> = {};
+  for (const [k, v] of Object.entries(ts) as [string, any][]) {
+    out[k] = {
+      temp: units === "imperial" ? `${Math.round(cToF(parseFloat(v.temp)))}°F` : v.temp,
+      pressure: units === "metric" ? `${psiToBar(parseFloat(v.pressure)).toFixed(2)} bar` : v.pressure,
+    };
+  }
+  return out;
+};
+
 export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   onLoadingChange,
   onApplyToSetup,
@@ -95,6 +111,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     driverStyle, setDriverStyle,
     handlingIssue, setHandlingIssue,
   } = useSession();
+  const { units, fmt } = useUnits();
 
   // Driver Style & Preferences (telemetry-tab only)
   const [balancePreference, setBalancePreference] = useState("Neutral Balance");
@@ -239,15 +256,12 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     return value;
   };
 
-  const downsamplePointsForSave = (
-    points: TelemetryPoint[],
-    max = 250
-  ): TelemetryPoint[] => {
-    if (points.length <= max) return points;
-    const step = points.length / max;
-    const out: TelemetryPoint[] = [];
-    for (let i = 0; i < max; i++) out.push(points[Math.floor(i * step)]);
-    const last = points[points.length - 1];
+  const downsampleArrayForSave = <T,>(arr: T[], max = 250): T[] => {
+    if (arr.length <= max) return arr;
+    const step = arr.length / max;
+    const out: T[] = [];
+    for (let i = 0; i < max; i++) out.push(arr[Math.floor(i * step)]);
+    const last = arr[arr.length - 1];
     if (out[out.length - 1] !== last) out.push(last);
     return out;
   };
@@ -294,9 +308,16 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             steeringScrub: parsed.steeringScrub,
             tyres: parsed.tyreStats,
           },
-          points: downsamplePointsForSave(parsed.points),
+          points: downsampleArrayForSave(parsed.points),
           anomalies: parsed.detectedAnomalies,
-          lapComparison,
+          // deltaPoints is full-resolution (one entry per telemetry point, 9
+          // numeric fields each ≈ 270KB alone) — downsample it like points.
+          lapComparison: lapComparison
+            ? {
+                ...lapComparison,
+                deltaPoints: downsampleArrayForSave(lapComparison.deltaPoints),
+              }
+            : lapComparison,
           frictionCircle: frictionCircleData,
         },
         analysis,
@@ -632,7 +653,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         activeChannel === "pedals"
           ? `${100 - i * 25}%`
           : activeChannel === "dualSpeed"
-          ? `${320 - i * 80} km/h`
+          ? `${fmt.speed(320 - i * 80)}`
           : activeChannel === "timeDelta"
           ? `${(1.5 - i * 0.75 > 0 ? "+" : "")}${(1.5 - i * 0.75).toFixed(2)}s`
           : activeChannel === "steering"
@@ -993,7 +1014,10 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     setSaveState("idle");
 
     try {
+      const aiSpeed = aiSpeedFor(units);
+      const aiTyres = aiTyresFor(units);
       const payload = {
+        units,
         game,
         car,
         track,
@@ -1009,15 +1033,15 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         handlingIssue,
         summaryMetrics: {
           lapTime: parsedTelemetry.lapTime,
-          topSpeed: parsedTelemetry.topSpeed,
-          minSpeed: parsedTelemetry.minSpeed,
+          topSpeed: aiSpeed(parsedTelemetry.topSpeed),
+          minSpeed: aiSpeed(parsedTelemetry.minSpeed),
           maxLatG: parsedTelemetry.maxLatG,
           maxDecelG: parsedTelemetry.maxDecelG,
-          minCornerSpeeds: parsedTelemetry.minCornerSpeeds,
+          minCornerSpeeds: parsedTelemetry.minCornerSpeeds.map((c) => ({ ...c, speed: aiSpeed(c.speed) })),
           trailBrakingScore: parsedTelemetry.trailBrakingScore,
           throttleSmoothness: parsedTelemetry.throttleSmoothness,
           steeringScrub: parsedTelemetry.steeringScrub,
-          tyres: parsedTelemetry.tyreStats,
+          tyres: aiTyres(parsedTelemetry.tyreStats),
         },
         sampledPoints: parsedTelemetry.points.slice(0, 45),
         anomalies: parsedTelemetry.detectedAnomalies,
@@ -1089,10 +1113,10 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     if (lapComparison && benchmarkMode === "pro") {
       text += `[PRO BENCHMARK COMPARISON]\n`;
       text += `Reference Lap: ${lapComparison.refLapTime} (Pro Benchmark)\n`;
-      text += `Pace Delta: ${lapComparison.totalTimeDeltaSeconds > 0 ? "+" : ""}${lapComparison.totalTimeDeltaSeconds}s · Top Speed Delta: ${lapComparison.topSpeedDeltaKmh > 0 ? "+" : ""}${lapComparison.topSpeedDeltaKmh} km/h\n`;
+      text += `Pace Delta: ${lapComparison.totalTimeDeltaSeconds > 0 ? "+" : ""}${lapComparison.totalTimeDeltaSeconds}s · Top Speed Delta: ${lapComparison.topSpeedDeltaKmh > 0 ? "+" : ""}${fmt.speed(Math.abs(lapComparison.topSpeedDeltaKmh), 1)}\n`;
       text += `Corner Attribution:\n`;
       lapComparison.cornerComparisons.forEach((cc) => {
-        text += `• ${cc.corner} (@${cc.dist}m): Δv ${cc.speedDelta > 0 ? "+" : ""}${cc.speedDelta} km/h | Δt ${cc.timeDelta > 0 ? "+" : ""}${cc.timeDelta}s | Brk: ${cc.brakingPointDeltaMeters > 0 ? "+" : ""}${cc.brakingPointDeltaMeters}m | Thr: ${cc.throttleCommitDeltaMeters > 0 ? "+" : ""}${cc.throttleCommitDeltaMeters}m\n  ${cc.verdict}\n`;
+        text += `• ${cc.corner} (@${fmt.distance(cc.dist)}): Δv ${cc.speedDelta > 0 ? "+" : ""}${fmt.speed(Math.abs(cc.speedDelta), 1)} | Δt ${cc.timeDelta > 0 ? "+" : ""}${cc.timeDelta}s | Brk: ${cc.brakingPointDeltaMeters > 0 ? "+" : ""}${fmt.distance(Math.abs(cc.brakingPointDeltaMeters))} | Thr: ${cc.throttleCommitDeltaMeters > 0 ? "+" : ""}${fmt.distance(Math.abs(cc.throttleCommitDeltaMeters))}\n  ${cc.verdict}\n`;
       });
       text += `\n`;
     }
@@ -1425,7 +1449,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                   type="text"
                   value={trackTemp}
                   onChange={(e) => setTrackTemp(e.target.value)}
-                  placeholder="e.g. 30°C"
+                  placeholder={`e.g. ${fmt.temp(30)}`}
                 />
               </div>
             </div>
@@ -1440,7 +1464,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                   type="text"
                   value={airTemp}
                   onChange={(e) => setAirTemp(e.target.value)}
-                  placeholder="e.g. 22°C"
+                  placeholder={`e.g. ${fmt.temp(22)}`}
                 />
               </div>
             </div>
@@ -1881,7 +1905,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                     Δt: {lapComparison.totalTimeDeltaSeconds > 0 ? `+${lapComparison.totalTimeDeltaSeconds}s` : `${lapComparison.totalTimeDeltaSeconds}s`}
                   </span>
                   <span className={`benchmark-delta-pill ${lapComparison.topSpeedDeltaKmh >= 0 ? "gain" : "loss"}`}>
-                    Δv Top: {lapComparison.topSpeedDeltaKmh > 0 ? `+${lapComparison.topSpeedDeltaKmh}` : lapComparison.topSpeedDeltaKmh} km/h
+                    Δv Top: {lapComparison.topSpeedDeltaKmh > 0 ? "+" : ""}{fmt.speed(Math.abs(lapComparison.topSpeedDeltaKmh), 1)}
                   </span>
                 </div>
                 <div className="benchmark-toggle-group">
@@ -1939,13 +1963,13 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 <canvas ref={canvasRef} />
                 {hoverPoint && (
                   <div className="telemetry-hover-hud">
-                    <div className="hud-dist">Dist: {hoverPoint.dist}m</div>
-                    <div className="hud-val hud-speed">Driver: {hoverPoint.speed} km/h</div>
+                    <div className="hud-dist">Dist: {fmt.distance(hoverPoint.dist)}</div>
+                    <div className="hud-val hud-speed">Driver: {fmt.speed(hoverPoint.speed)}</div>
                     {benchmarkMode === "pro" && hoverDeltaPoint && (
                       <>
-                        <div className="hud-val hud-ref">Ref: {hoverDeltaPoint.refSpeed} km/h</div>
+                        <div className="hud-val hud-ref">Ref: {fmt.speed(hoverDeltaPoint.refSpeed)}</div>
                         <div className={`hud-val ${hoverDeltaPoint.speedDelta >= 0 ? "hud-delta-neg" : "hud-delta-pos"}`}>
-                          Δv: {hoverDeltaPoint.speedDelta > 0 ? "+" : ""}{hoverDeltaPoint.speedDelta} km/h
+                          Δv: {hoverDeltaPoint.speedDelta > 0 ? "+" : ""}{fmt.speed(Math.abs(hoverDeltaPoint.speedDelta), 1)}
                         </div>
                         <div className={`hud-val ${hoverDeltaPoint.timeDelta <= 0 ? "hud-delta-neg" : "hud-delta-pos"}`}>
                           Δt: {hoverDeltaPoint.timeDelta > 0 ? "+" : ""}{hoverDeltaPoint.timeDelta}s
@@ -1961,7 +1985,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
               </div>
 
               <div className="chart-footer-legend">
-                <span className="legend-item"><span className="legend-line line-speed"></span> Driver Speed (km/h)</span>
+                <span className="legend-item"><span className="legend-line line-speed"></span> Driver Speed ({fmt.speedUnit})</span>
                 {benchmarkMode === "pro" && referenceTelemetry && (
                   <span className="legend-item"><span className="legend-line line-ref"></span> Pro Benchmark Speed</span>
                 )}
@@ -2073,18 +2097,18 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                             <td className="delta-corner-cell">
                               <span className="delta-corner-badge">{c.shortName || `T${idx + 1}`}</span>
                               {c.corner}
-                              <span className="delta-dist-sub">@{c.dist}m</span>
+                              <span className="delta-dist-sub">@{fmt.distance(c.dist)}</span>
                             </td>
-                            <td className="delta-speed-val">{c.driverMinSpeed} km/h</td>
-                            <td className="delta-speed-val">{c.refMinSpeed} km/h</td>
+                            <td className="delta-speed-val">{fmt.speed(c.driverMinSpeed)}</td>
+                            <td className="delta-speed-val">{fmt.speed(c.refMinSpeed)}</td>
                             <td className={`delta-diff ${c.speedDelta >= 0 ? "gain" : "loss"}`}>
-                              {c.speedDelta > 0 ? `+${c.speedDelta}` : c.speedDelta} km/h
+                              {c.speedDelta > 0 ? "+" : ""}{fmt.speed(Math.abs(c.speedDelta), 1)}
                             </td>
                             <td className={`delta-diff ${c.brakingPointDeltaMeters >= 0 ? "gain" : "loss"}`}>
-                              {c.brakingPointDeltaMeters > 0 ? `+${c.brakingPointDeltaMeters}m early` : c.brakingPointDeltaMeters < 0 ? `${Math.abs(c.brakingPointDeltaMeters)}m late` : "Matched"}
+                              {c.brakingPointDeltaMeters > 0 ? `+${fmt.distance(c.brakingPointDeltaMeters)} early` : c.brakingPointDeltaMeters < 0 ? `${fmt.distance(Math.abs(c.brakingPointDeltaMeters))} late` : "Matched"}
                             </td>
                             <td className={`delta-diff ${c.throttleCommitDeltaMeters >= 0 ? "gain" : "loss"}`}>
-                              {c.throttleCommitDeltaMeters > 0 ? `${c.throttleCommitDeltaMeters}m earlier` : c.throttleCommitDeltaMeters < 0 ? `${Math.abs(c.throttleCommitDeltaMeters)}m delayed` : "Matched"}
+                              {c.throttleCommitDeltaMeters > 0 ? `${fmt.distance(c.throttleCommitDeltaMeters)} earlier` : c.throttleCommitDeltaMeters < 0 ? `${fmt.distance(Math.abs(c.throttleCommitDeltaMeters))} delayed` : "Matched"}
                             </td>
                             <td className={`delta-diff ${c.timeDelta <= 0 ? "gain" : "loss"}`}>
                               {c.timeDelta > 0 ? `+${c.timeDelta}s` : `${c.timeDelta}s`}

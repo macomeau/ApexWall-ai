@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useUnits } from "@/components/session/UnitsContext";
 import { WorkspaceMode } from "@/components/ModeNavigation";
 import { Activity, Sliders, MessageSquare, Timer, Radio, Moon, Sun, ShieldCheck } from "lucide-react";
 
@@ -29,6 +30,7 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
 }) => {
   const { user, signOut } = useAuth();
   const { isAmoled, toggleTheme } = useTheme();
+  const { units, setUnits } = useUnits();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -144,6 +146,35 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
               </span>
             )}
           </button>
+
+          {/* Units Switcher Toggle (Metric / Imperial) */}
+          <div
+            className="flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[11px] font-mono font-semibold"
+            title="Display units: metric (km/h, °C, bar) or imperial (mph, °F, psi)"
+          >
+            <button
+              type="button"
+              onClick={() => setUnits("metric")}
+              className={`px-2 py-0.5 rounded-md transition-all ${
+                units === "metric"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              METRIC
+            </button>
+            <button
+              type="button"
+              onClick={() => setUnits("imperial")}
+              className={`px-2 py-0.5 rounded-md transition-all ${
+                units === "imperial"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              IMP
+            </button>
+          </div>
 
           {/* Setup Vault Button */}
           <button

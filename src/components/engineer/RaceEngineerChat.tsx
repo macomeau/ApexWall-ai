@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { SetupExportContext } from "@/lib/setup-exporter";
 import { TelemetryAnalysisResult, ParsedTelemetryFile } from "@/types/telemetry";
+import { useUnits } from "@/components/session/UnitsContext";
+import { kmhToMph, psiToBar, cToF } from "@/lib/units";
 
 interface Message {
   id: string;
@@ -26,6 +28,7 @@ export const RaceEngineerChat: React.FC<RaceEngineerChatProps> = ({
   onApplyAdjustmentToSetup,
   onSwitchToSetup,
 }) => {
+  const { units } = useUnits();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome-1",
@@ -94,21 +97,33 @@ I have your active session telemetry and chassis telemetry synced. How does the 
     setInput("");
     setIsLoading(true);
 
-    // Build context payload
+    // Build context payload (speeds/tyres converted to the active unit system for the AI)
+    const aiSpd = (kmh: number) => Math.round(units === "imperial" ? kmhToMph(kmh) : kmh);
+    const aiTyreStats = parsedTelemetry?.tyreStats
+      ? Object.fromEntries(
+          Object.entries(parsedTelemetry.tyreStats).map(([k, v]: [string, any]) => [
+            k,
+            {
+              temp: units === "imperial" ? `${Math.round(cToF(parseFloat(v.temp)))}°F` : v.temp,
+              pressure: units === "metric" ? `${psiToBar(parseFloat(v.pressure)).toFixed(2)} bar` : v.pressure,
+            },
+          ])
+        )
+      : undefined;
     const telemetryContext = {
       car: activeCar,
       track: activeTrack,
       lapTime: activeLapTime,
-      topSpeed: parsedTelemetry?.topSpeed || 285,
-      minSpeed: parsedTelemetry?.minSpeed || 65,
+      topSpeed: aiSpd(parsedTelemetry?.topSpeed || 285),
+      minSpeed: aiSpd(parsedTelemetry?.minSpeed || 65),
       trailBrakingScore: parsedTelemetry?.trailBrakingScore || 78,
       gripUtilization: gripUtil,
-      tyres: parsedTelemetry?.tyreStats,
+      tyres: aiTyreStats,
       keyCorners: telemetryResult?.lapComparison?.cornerComparisons?.map((c) => ({
         corner: c.corner,
-        driverSpeed: c.driverMinSpeed,
-        refSpeed: c.refMinSpeed,
-        speedDelta: c.speedDelta,
+        driverSpeed: aiSpd(c.driverMinSpeed),
+        refSpeed: aiSpd(c.refMinSpeed),
+        speedDelta: units === "imperial" ? +kmhToMph(c.speedDelta).toFixed(1) : c.speedDelta,
         timeDelta: c.timeDelta,
         verdict: c.verdict,
       })),
@@ -130,6 +145,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          units,
           messages: [...messages, userMsg].map((m) => ({
             role: m.role,
             content: m.content,

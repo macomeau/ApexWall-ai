@@ -6,6 +6,8 @@ import {
   calculateCompensatedPressures,
   TyreCalculationResult,
 } from "@/lib/tyre-calculator";
+import { useUnits } from "@/components/session/UnitsContext";
+import { psiToBar, barToPsi } from "@/lib/units";
 
 interface TyrePressureCalculatorProps {
   initialTrackTemp?: number;
@@ -16,6 +18,7 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
   initialTrackTemp = 30,
   onApplyPressures,
 }) => {
+  const { units, fmt } = useUnits();
   const [selectedPresetId, setSelectedPresetId] = useState(TYRE_PRESETS[0].id);
   const [trackTemp, setTrackTemp] = useState<number>(initialTrackTemp);
   const [circuitDirection, setCircuitDirection] = useState<"clockwise" | "counter-clockwise" | "balanced">(
@@ -27,6 +30,16 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
   const [empiricalCold, setEmpiricalCold] = useState({ FL: 26.2, FR: 26.5, RL: 25.9, RR: 26.2 });
   const [empiricalHot, setEmpiricalHot] = useState({ FL: 27.2, FR: 27.4, RL: 26.8, RR: 27.0 });
   const [appliedFeedback, setAppliedFeedback] = useState(false);
+
+  // Empirical inputs are psi-native in state; show them in the user's units.
+  const imperial = units === "imperial";
+  const dispP = (psi: number): number => (imperial ? Math.round(psi * 10) / 10 : Math.round(psiToBar(psi) * 100) / 100);
+  const parseP = (raw: string, fallbackPsi: number): number => {
+    const v = parseFloat(raw);
+    if (Number.isNaN(v)) return fallbackPsi;
+    return imperial ? v : barToPsi(v);
+  };
+  const pStep = imperial ? 0.1 : 0.01;
 
   const result: TyreCalculationResult = useMemo(() => {
     return calculateCompensatedPressures({
@@ -59,7 +72,7 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
               TYRE PRESSURE & THERMAL COMPENSATOR
             </span>
             <span className="calc-target-pill">
-              TARGET: <strong>{result.targetHot} PSI HOT</strong>
+              TARGET: <strong>{fmt.pressurePsi(result.targetHot)} HOT</strong>
             </span>
           </div>
           <h3 className="calc-title">Optimal Cold Starting Pressure Calculator</h3>
@@ -98,7 +111,7 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
           >
             {TYRE_PRESETS.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} (Hot: {p.targetHotPressure} psi)
+                {p.name} (Hot: {fmt.pressurePsi(p.targetHotPressure)})
               </option>
             ))}
           </select>
@@ -107,7 +120,7 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
         <div className="calc-field">
           <div className="slider-label-row">
             <label className="field-label">Current Track Temperature</label>
-            <span className="slider-val-badge">{trackTemp}°C</span>
+            <span className="slider-val-badge">{fmt.temp(trackTemp)}</span>
           </div>
           <input
             type="range"
@@ -119,9 +132,9 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
             className="calc-slider"
           />
           <div className="slider-range-labels">
-            <span>10°C (Cold)</span>
-            <span>30°C (Baseline)</span>
-            <span>55°C (Extreme)</span>
+            <span>{fmt.temp(10)} (Cold)</span>
+            <span>{fmt.temp(30)} (Baseline)</span>
+            <span>{fmt.temp(55)} (Extreme)</span>
           </div>
         </div>
 
@@ -166,17 +179,17 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
               <div className="emp-inputs">
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalCold.FL}
-                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, FL: parseFloat(e.target.value) || 26 })}
+                  step={pStep}
+                  value={dispP(empiricalCold.FL)}
+                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, FL: parseP(e.target.value, 26) })}
                   title="Cold Pressure"
                 />
                 <span>→</span>
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalHot.FL}
-                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, FL: parseFloat(e.target.value) || 27 })}
+                  step={pStep}
+                  value={dispP(empiricalHot.FL)}
+                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, FL: parseP(e.target.value, 27) })}
                   title="Observed Hot"
                 />
               </div>
@@ -187,17 +200,17 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
               <div className="emp-inputs">
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalCold.FR}
-                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, FR: parseFloat(e.target.value) || 26 })}
+                  step={pStep}
+                  value={dispP(empiricalCold.FR)}
+                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, FR: parseP(e.target.value, 26) })}
                   title="Cold Pressure"
                 />
                 <span>→</span>
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalHot.FR}
-                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, FR: parseFloat(e.target.value) || 27 })}
+                  step={pStep}
+                  value={dispP(empiricalHot.FR)}
+                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, FR: parseP(e.target.value, 27) })}
                   title="Observed Hot"
                 />
               </div>
@@ -208,17 +221,17 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
               <div className="emp-inputs">
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalCold.RL}
-                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, RL: parseFloat(e.target.value) || 26 })}
+                  step={pStep}
+                  value={dispP(empiricalCold.RL)}
+                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, RL: parseP(e.target.value, 26) })}
                   title="Cold Pressure"
                 />
                 <span>→</span>
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalHot.RL}
-                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, RL: parseFloat(e.target.value) || 27 })}
+                  step={pStep}
+                  value={dispP(empiricalHot.RL)}
+                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, RL: parseP(e.target.value, 27) })}
                   title="Observed Hot"
                 />
               </div>
@@ -229,17 +242,17 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
               <div className="emp-inputs">
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalCold.RR}
-                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, RR: parseFloat(e.target.value) || 26 })}
+                  step={pStep}
+                  value={dispP(empiricalCold.RR)}
+                  onChange={(e) => setEmpiricalCold({ ...empiricalCold, RR: parseP(e.target.value, 26) })}
                   title="Cold Pressure"
                 />
                 <span>→</span>
                 <input
                   type="number"
-                  step="0.1"
-                  value={empiricalHot.RR}
-                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, RR: parseFloat(e.target.value) || 27 })}
+                  step={pStep}
+                  value={dispP(empiricalHot.RR)}
+                  onChange={(e) => setEmpiricalHot({ ...empiricalHot, RR: parseP(e.target.value, 27) })}
                   title="Observed Hot"
                 />
               </div>
@@ -255,14 +268,14 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
           <div className="tyre-quad-card card-fl">
             <div className="quad-card-top">
               <span className="quad-pos-badge">FRONT LEFT (FL)</span>
-              <span className="quad-gain-pill">+{result.expectedGain.FL} psi hot gain</span>
+              <span className="quad-gain-pill">+{fmt.pressurePsi(result.expectedGain.FL)} hot gain</span>
             </div>
             <div className="quad-main-val">
-              <span className="quad-val">{result.recommendedCold.FL}</span>
-              <span className="quad-unit">PSI COLD</span>
+              <span className="quad-val">{fmt.pressurePsi(result.recommendedCold.FL).split(" ")[0]}</span>
+              <span className="quad-unit">{fmt.pressureUnit.toUpperCase()} COLD</span>
             </div>
             <div className="quad-sub-metric">
-              Target Hot: <strong>{result.expectedHot.FL} PSI</strong>
+              Target Hot: <strong>{fmt.pressurePsi(result.expectedHot.FL)}</strong>
             </div>
           </div>
 
@@ -270,14 +283,14 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
           <div className="tyre-quad-card card-fr">
             <div className="quad-card-top">
               <span className="quad-pos-badge">FRONT RIGHT (FR)</span>
-              <span className="quad-gain-pill">+{result.expectedGain.FR} psi hot gain</span>
+              <span className="quad-gain-pill">+{fmt.pressurePsi(result.expectedGain.FR)} hot gain</span>
             </div>
             <div className="quad-main-val">
-              <span className="quad-val">{result.recommendedCold.FR}</span>
-              <span className="quad-unit">PSI COLD</span>
+              <span className="quad-val">{fmt.pressurePsi(result.recommendedCold.FR).split(" ")[0]}</span>
+              <span className="quad-unit">{fmt.pressureUnit.toUpperCase()} COLD</span>
             </div>
             <div className="quad-sub-metric">
-              Target Hot: <strong>{result.expectedHot.FR} PSI</strong>
+              Target Hot: <strong>{fmt.pressurePsi(result.expectedHot.FR)}</strong>
             </div>
           </div>
 
@@ -285,14 +298,14 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
           <div className="tyre-quad-card card-rl">
             <div className="quad-card-top">
               <span className="quad-pos-badge">REAR LEFT (RL)</span>
-              <span className="quad-gain-pill">+{result.expectedGain.RL} psi hot gain</span>
+              <span className="quad-gain-pill">+{fmt.pressurePsi(result.expectedGain.RL)} hot gain</span>
             </div>
             <div className="quad-main-val">
-              <span className="quad-val">{result.recommendedCold.RL}</span>
-              <span className="quad-unit">PSI COLD</span>
+              <span className="quad-val">{fmt.pressurePsi(result.recommendedCold.RL).split(" ")[0]}</span>
+              <span className="quad-unit">{fmt.pressureUnit.toUpperCase()} COLD</span>
             </div>
             <div className="quad-sub-metric">
-              Target Hot: <strong>{result.expectedHot.RL} PSI</strong>
+              Target Hot: <strong>{fmt.pressurePsi(result.expectedHot.RL)}</strong>
             </div>
           </div>
 
@@ -300,14 +313,14 @@ export const TyrePressureCalculator: React.FC<TyrePressureCalculatorProps> = ({
           <div className="tyre-quad-card card-rr">
             <div className="quad-card-top">
               <span className="quad-pos-badge">REAR RIGHT (RR)</span>
-              <span className="quad-gain-pill">+{result.expectedGain.RR} psi hot gain</span>
+              <span className="quad-gain-pill">+{fmt.pressurePsi(result.expectedGain.RR)} hot gain</span>
             </div>
             <div className="quad-main-val">
-              <span className="quad-val">{result.recommendedCold.RR}</span>
-              <span className="quad-unit">PSI COLD</span>
+              <span className="quad-val">{fmt.pressurePsi(result.recommendedCold.RR).split(" ")[0]}</span>
+              <span className="quad-unit">{fmt.pressureUnit.toUpperCase()} COLD</span>
             </div>
             <div className="quad-sub-metric">
-              Target Hot: <strong>{result.expectedHot.RR} PSI</strong>
+              Target Hot: <strong>{fmt.pressurePsi(result.expectedHot.RR)}</strong>
             </div>
           </div>
         </div>

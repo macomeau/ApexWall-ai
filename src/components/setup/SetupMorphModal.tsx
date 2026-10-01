@@ -26,6 +26,7 @@ import {
   MorphResult 
 } from '@/lib/setup-morph-engine';
 import { saveSetupToVault } from '@/lib/setup-vault';
+import { useUnits } from '@/components/session/UnitsContext';
 
 interface SetupMorphModalProps {
   context: SetupExportContext;
@@ -42,6 +43,7 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
   onApplyMorphedSetup,
   onOpenExportModal,
 }) => {
+  const { fmt } = useUnits();
   // Extract initial baseline numbers from context
   const parseInitNum = (str?: string, fallback: number = 28) => {
     if (!str) return fallback;
@@ -212,7 +214,7 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
                   Target Track Temp:
                 </span>
                 <div className="flex items-center gap-2 font-mono">
-                  <span className="text-sm font-bold text-white">{targetTrackTemp}°C</span>
+                  <span className="text-sm font-bold text-white">{fmt.temp(targetTrackTemp)}</span>
                   <span className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
                     deltaTrack > 0 
                       ? "bg-rose-500/20 text-rose-300" 
@@ -220,7 +222,7 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
                       ? "bg-sky-500/20 text-sky-300" 
                       : "bg-white/10 text-slate-400"
                   }`}>
-                    {deltaTrack > 0 ? `+${deltaTrack}°C HOTTER` : deltaTrack < 0 ? `${deltaTrack}°C COLDER` : "BASELINE"}
+                    {deltaTrack > 0 ? `+${fmt.tempDelta(deltaTrack)} HOTTER` : deltaTrack < 0 ? `${fmt.tempDelta(deltaTrack)} COLDER` : "BASELINE"}
                   </span>
                 </div>
               </div>
@@ -234,9 +236,9 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                <span>12°C (Freezing)</span>
-                <span>28°C (Baseline)</span>
-                <span>52°C (Scorching)</span>
+                <span>{fmt.temp(12)} (Freezing)</span>
+                <span>{fmt.temp(28)} (Baseline)</span>
+                <span>{fmt.temp(52)} (Scorching)</span>
               </div>
             </div>
 
@@ -247,7 +249,7 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
                   <Wind className="w-4 h-4 text-cyan-400" />
                   Target Air Temp:
                 </span>
-                <span className="font-mono text-sm font-bold text-white">{targetAirTemp}°C</span>
+                <span className="font-mono text-sm font-bold text-white">{fmt.temp(targetAirTemp)}</span>
               </div>
               <input
                 type="range"
@@ -259,9 +261,9 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                <span>10°C (Cold Air)</span>
-                <span>22°C (Moderate)</span>
-                <span>40°C (Tropical)</span>
+                <span>{fmt.temp(10)} (Cold Air)</span>
+                <span>{fmt.temp(22)} (Moderate)</span>
+                <span>{fmt.temp(40)} (Tropical)</span>
               </div>
             </div>
 

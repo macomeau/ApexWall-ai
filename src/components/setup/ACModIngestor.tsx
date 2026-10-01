@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { parseAssettoCorsaModZip, AssettoCorsaModData, ACModSlider } from "@/lib/ac-mod-parser";
+import { useUnits } from "@/components/session/UnitsContext";
 
 interface ACModIngestorProps {
   onModParsed: (modData: AssettoCorsaModData) => void;
@@ -14,6 +15,7 @@ export const ACModIngestor: React.FC<ACModIngestorProps> = ({
   onClearMod,
   currentMod,
 }) => {
+  const { fmt } = useUnits();
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -158,7 +160,7 @@ export const ACModIngestor: React.FC<ACModIngestorProps> = ({
                   )}
                   {currentMod.idealTyrePressures?.front && (
                     <span className="text-slate-300">
-                      🎯 Target: {currentMod.idealTyrePressures.front} psi
+                      🎯 Target: {fmt.pressurePsi(currentMod.idealTyrePressures.front)}
                     </span>
                   )}
                   <span className="text-cyan-400 font-semibold">

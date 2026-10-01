@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { getAuthenticTrackGeometry } from "@/lib/circuit-geometries";
+import { useUnits } from "@/components/session/UnitsContext";
+import { kmhToMph } from "@/lib/units";
 
 export interface LiveTelemetryFrame {
   speed: number;        // km/h
@@ -24,7 +26,7 @@ export interface LiveTelemetryFrame {
 export const LiveTelemetryHUD: React.FC = () => {
   const [activeSim, setActiveSim] = useState<"demo" | "bridge">("demo");
   const [selectedCircuit, setSelectedCircuit] = useState<"spa" | "monza" | "silverstone">("spa");
-  const [speedUnit, setSpeedUnit] = useState<"kmh" | "mph">("kmh");
+  const { units, fmt } = useUnits();
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [bridgeStatus, setBridgeStatus] = useState<string>("Standby");
 
@@ -315,7 +317,7 @@ export const LiveTelemetryHUD: React.FC = () => {
   const numActiveLeds = Math.min(15, Math.floor(rpmPct * 16));
   const isShiftPoint = rpmPct >= 0.94;
 
-  const displaySpeed = speedUnit === "kmh" ? frame.speed : Math.round(frame.speed * 0.621371);
+  const displaySpeed = units === "imperial" ? Math.round(kmhToMph(frame.speed)) : Math.round(frame.speed);
 
   return (
     <div className="max-w-[1440px] mx-auto px-6 py-4 space-y-6">
@@ -363,21 +365,8 @@ export const LiveTelemetryHUD: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-1 bg-slate-950 px-1 py-1 rounded-lg border border-slate-800 text-xs font-mono">
-            <button
-              type="button"
-              onClick={() => setSpeedUnit("kmh")}
-              className={`px-1.5 py-0.5 rounded ${speedUnit === "kmh" ? "bg-slate-800 text-white font-bold" : "text-slate-500"}`}
-            >
-              KM/H
-            </button>
-            <button
-              type="button"
-              onClick={() => setSpeedUnit("mph")}
-              className={`px-1.5 py-0.5 rounded ${speedUnit === "mph" ? "bg-slate-800 text-white font-bold" : "text-slate-500"}`}
-            >
-              MPH
-            </button>
+          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded-lg border border-slate-800 text-xs font-mono text-slate-400">
+            <span className="uppercase">{fmt.speedUnit}</span>
           </div>
         </div>
       </div>
@@ -467,7 +456,7 @@ export const LiveTelemetryHUD: React.FC = () => {
                 {displaySpeed}
               </span>
               <span className="font-mono text-xs font-bold uppercase text-slate-500 tracking-wider">
-                {speedUnit}
+                {fmt.speedUnit}
               </span>
             </div>
 
@@ -557,29 +546,29 @@ export const LiveTelemetryHUD: React.FC = () => {
             {/* FL */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="text-[10px] font-mono text-slate-500">FRONT LEFT</div>
-              <div className="text-lg font-bold font-mono text-slate-100">{frame.tyrePressures.FL} psi</div>
-              <div className="text-xs font-mono text-cyan-400">{frame.tyreTemps.FL}°C</div>
+              <div className="text-lg font-bold font-mono text-slate-100">{fmt.pressurePsi(frame.tyrePressures.FL)}</div>
+              <div className="text-xs font-mono text-cyan-400">{fmt.temp(frame.tyreTemps.FL)}</div>
             </div>
 
             {/* FR */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="text-[10px] font-mono text-slate-500">FRONT RIGHT</div>
-              <div className="text-lg font-bold font-mono text-slate-100">{frame.tyrePressures.FR} psi</div>
-              <div className="text-xs font-mono text-cyan-400">{frame.tyreTemps.FR}°C</div>
+              <div className="text-lg font-bold font-mono text-slate-100">{fmt.pressurePsi(frame.tyrePressures.FR)}</div>
+              <div className="text-xs font-mono text-cyan-400">{fmt.temp(frame.tyreTemps.FR)}</div>
             </div>
 
             {/* RL */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="text-[10px] font-mono text-slate-500">REAR LEFT</div>
-              <div className="text-lg font-bold font-mono text-slate-100">{frame.tyrePressures.RL} psi</div>
-              <div className="text-xs font-mono text-cyan-400">{frame.tyreTemps.RL}°C</div>
+              <div className="text-lg font-bold font-mono text-slate-100">{fmt.pressurePsi(frame.tyrePressures.RL)}</div>
+              <div className="text-xs font-mono text-cyan-400">{fmt.temp(frame.tyreTemps.RL)}</div>
             </div>
 
             {/* RR */}
             <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
               <div className="text-[10px] font-mono text-slate-500">REAR RIGHT</div>
-              <div className="text-lg font-bold font-mono text-slate-100">{frame.tyrePressures.RR} psi</div>
-              <div className="text-xs font-mono text-cyan-400">{frame.tyreTemps.RR}°C</div>
+              <div className="text-lg font-bold font-mono text-slate-100">{fmt.pressurePsi(frame.tyrePressures.RR)}</div>
+              <div className="text-xs font-mono text-cyan-400">{fmt.temp(frame.tyreTemps.RR)}</div>
             </div>
           </div>
 

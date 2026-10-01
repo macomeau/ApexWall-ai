@@ -8,6 +8,7 @@ import { saveSetupToVault } from "@/lib/setup-vault";
 import { ACModIngestor } from "./ACModIngestor";
 import { AssettoCorsaModData } from "@/lib/ac-mod-parser";
 import { useSession } from "@/components/session/SessionContext";
+import { useUnits } from "@/components/session/UnitsContext";
 
 interface SetupGeneratorProps {
   onLoadingChange: (loading: boolean) => void;
@@ -43,6 +44,7 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
     driverStyle, setDriverStyle,
     handlingIssue, setHandlingIssue,
   } = useSession();
+  const { units, fmt } = useUnits();
   const [skillLevel, setSkillLevel] = useState("Intermediate");
   const [acModData, setAcModData] = useState<AssettoCorsaModData | null>(null);
 
@@ -84,6 +86,7 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          units,
           game,
           car,
           track,
@@ -335,7 +338,7 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
                   type="text"
                   value={trackTemp}
                   onChange={(e) => setTrackTemp(e.target.value)}
-                  placeholder="e.g. 32°C"
+                  placeholder={`e.g. ${fmt.temp(32)}`}
                 />
               </div>
             </div>
@@ -350,7 +353,7 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
                   type="text"
                   value={airTemp}
                   onChange={(e) => setAirTemp(e.target.value)}
-                  placeholder="e.g. 24°C"
+                  placeholder={`e.g. ${fmt.temp(24)}`}
                 />
               </div>
             </div>

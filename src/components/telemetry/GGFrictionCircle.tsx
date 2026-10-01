@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect } from "react";
 import { GGFrictionCircleData, GGPoint } from "@/types/telemetry";
+import { useUnits } from "@/components/session/UnitsContext";
 
 interface GGFrictionCircleProps {
   data: GGFrictionCircleData;
@@ -13,6 +14,7 @@ export const GGFrictionCircle: React.FC<GGFrictionCircleProps> = ({
   data,
   hoverIndex = -1,
 }) => {
+  const { fmt } = useUnits();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -222,7 +224,7 @@ export const GGFrictionCircle: React.FC<GGFrictionCircleProps> = ({
                 Total: <strong className="text-cyan">{activePoint.gTotal}G</strong>
               </span>
               <span className="hud-metric">
-                Speed: <strong>{activePoint.speed} km/h</strong>
+                Speed: <strong>{fmt.speed(activePoint.speed)}</strong>
               </span>
             </div>
           )}

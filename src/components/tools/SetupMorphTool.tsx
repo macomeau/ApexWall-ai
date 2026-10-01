@@ -27,9 +27,11 @@ import {
   MorphResult 
 } from '@/lib/setup-morph-engine';
 import { saveSetupToVault, getSavedSetups } from '@/lib/setup-vault';
+import { useUnits } from '@/components/session/UnitsContext';
 import { SetupExportModal } from '../setup/SetupExportModal';
 
 export const SetupMorphTool: React.FC = () => {
+  const { fmt } = useUnits();
   const [car, setCar] = useState("Ferrari 296 GT3");
   const [track, setTrack] = useState("Spa-Francorchamps");
   const [game, setGame] = useState("Assetto Corsa");
@@ -53,10 +55,10 @@ export const SetupMorphTool: React.FC = () => {
     {
       title: "Tyres & Pressures",
       items: [
-        { label: "Front Left Cold Pressure", value: "26.5 psi" },
-        { label: "Front Right Cold Pressure", value: "26.8 psi" },
-        { label: "Rear Left Cold Pressure", value: "26.2 psi" },
-        { label: "Rear Right Cold Pressure", value: "26.4 psi" },
+        { label: "Front Left Cold Pressure", value: fmt.pressurePsi(26.5) },
+        { label: "Front Right Cold Pressure", value: fmt.pressurePsi(26.8) },
+        { label: "Rear Left Cold Pressure", value: fmt.pressurePsi(26.2) },
+        { label: "Rear Right Cold Pressure", value: fmt.pressurePsi(26.4) },
       ],
     },
     {
@@ -206,7 +208,7 @@ export const SetupMorphTool: React.FC = () => {
                   Target Track Temp:
                 </span>
                 <div className="flex items-center gap-1.5 font-mono">
-                  <span className="text-sm font-bold text-white">{targetTrackTemp}°C</span>
+                  <span className="text-sm font-bold text-white">{fmt.temp(targetTrackTemp)}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
                     deltaTrack > 0 
                       ? "bg-rose-500/20 text-rose-300" 
@@ -214,7 +216,7 @@ export const SetupMorphTool: React.FC = () => {
                       ? "bg-sky-500/20 text-sky-300" 
                       : "bg-white/10 text-slate-400"
                   }`}>
-                    {deltaTrack > 0 ? `+${deltaTrack}°C HOT` : deltaTrack < 0 ? `${deltaTrack}°C COLD` : "0°C"}
+                    {deltaTrack > 0 ? `+${fmt.tempDelta(deltaTrack)} HOT` : deltaTrack < 0 ? `${fmt.tempDelta(deltaTrack)} COLD` : fmt.tempDelta(0)}
                   </span>
                 </div>
               </div>
@@ -228,9 +230,9 @@ export const SetupMorphTool: React.FC = () => {
                 className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
               />
               <div className="flex justify-between text-[10px] font-mono text-slate-500">
-                <span>12°C (Freezing)</span>
-                <span>28°C (Base)</span>
-                <span>52°C (Heatwave)</span>
+                <span>{fmt.temp(12)} (Freezing)</span>
+                <span>{fmt.temp(28)} (Base)</span>
+                <span>{fmt.temp(52)} (Heatwave)</span>
               </div>
             </div>
 
@@ -241,7 +243,7 @@ export const SetupMorphTool: React.FC = () => {
                   <Wind className="w-3.5 h-3.5 text-cyan-400" />
                   Target Air Temp:
                 </span>
-                <span className="font-mono text-xs font-bold text-white">{targetAirTemp}°C</span>
+                <span className="font-mono text-xs font-bold text-white">{fmt.temp(targetAirTemp)}</span>
               </div>
               <input
                 type="range"
@@ -294,7 +296,7 @@ export const SetupMorphTool: React.FC = () => {
                   Stint Fuel Load:
                 </span>
                 <span className="font-mono text-xs font-bold text-amber-300">
-                  {targetFuel} L {deltaFuel !== 0 && `(${deltaFuel > 0 ? "+" : ""}${deltaFuel}L)`}
+                  {fmt.fuel(targetFuel)} {deltaFuel !== 0 && `(${deltaFuel > 0 ? "+" : ""}${fmt.fuel(Math.abs(deltaFuel))})`}
                 </span>
               </div>
               <input

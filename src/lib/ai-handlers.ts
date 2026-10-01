@@ -21,6 +21,27 @@ const NextResponse = {
   }),
 };
 
+/**
+ * Units directive for AI prompts. The client sends `units` ("metric" | "imperial")
+ * from the global UnitsContext; the AI must express every number in that system.
+ */
+/** Fallback-template unit helpers: canonical values are metric-native (psi for tyre pressure). */
+const uPsi = (psi: number, units?: string): string =>
+  units === "imperial" ? `${psi.toFixed(1)} psi` : `${(psi / 14.5038).toFixed(2)} bar`;
+const uPsiRange = (lo: number, hi: number, units?: string): string =>
+  units === "imperial" ? `${lo.toFixed(1)}\u2013${hi.toFixed(1)} psi` : `${(lo / 14.5038).toFixed(2)}\u2013${(hi / 14.5038).toFixed(2)} bar`;
+const uTemp = (c: number, units?: string): string =>
+  units === "imperial" ? `${Math.round((c * 9) / 5 + 32)}\u00B0F` : `${c}\u00B0C`;
+/** Speed unit label matching client-converted AI context numbers. */
+const spdU = (units?: string): string => (units === "imperial" ? "mph" : "km/h");
+
+export function unitsDirective(units: string | undefined): string {
+  if (units === "imperial") {
+    return "UNITS: The driver uses IMPERIAL units. Express ALL speeds in mph, ALL temperatures in °F, ALL tyre pressures in psi, distances in feet (miles for long distances), and fuel in US gallons. Never use km/h, °C, bar, meters, or liters in your response.";
+  }
+  return "UNITS: The driver uses METRIC units. Express ALL speeds in km/h, ALL temperatures in °C, ALL tyre pressures in bar, distances in meters (km for long distances), and fuel in liters. Never use mph, °F, psi, feet, miles, or gallons in your response.";
+}
+
 
 export async function handleGenerateSetup(body: any): Promise<HandlerResult> {
 
@@ -38,6 +59,7 @@ export async function handleGenerateSetup(body: any): Promise<HandlerResult> {
     handlingIssue,
     skillLevel,
     customModProfile,
+    units,
   } = body;
 
   if (!game || !car || !track) {
@@ -105,6 +127,8 @@ CRITICAL INSTRUCTION: You must NEVER output generic setup categories or generic 
 ${customModProfile?.sliders?.length > 0 ? "You have been provided with the user's authentic Assetto Corsa mod setup.ini parameters. Use these EXACT parameter names, units, and limits for the sections." : ""}
 
 ${profile.systemPromptGuidance}
+
+${unitsDirective(units)}
 
 Respond with ONLY valid JSON, no markdown fences, no commentary outside the JSON, matching this shape:
 
@@ -176,6 +200,7 @@ export async function handleRaceEngineer(body: any): Promise<HandlerResult> {
     telemetryContext,
     setupContext,
     activeSim = "Assetto Corsa Competizione",
+    units,
   } = body;
 
   const lastUserMessage = messages[messages.length - 1]?.content || "";
@@ -205,7 +230,7 @@ export async function handleRaceEngineer(body: any): Promise<HandlerResult> {
   if (telemetryContext) {
     sessionContextText += `\n--- SESSION TELEMETRY & LAP ANALYSIS ---\n`;
     if (telemetryContext.lapTime) sessionContextText += `Lap Time: ${telemetryContext.lapTime}\n`;
-    if (telemetryContext.topSpeed) sessionContextText += `Top Speed: ${telemetryContext.topSpeed} km/h\n`;
+    if (telemetryContext.topSpeed) sessionContextText += `Top Speed: ${telemetryContext.topSpeed} ${spdU(units)}\n`;
     if (telemetryContext.trailBrakingScore != null) {
       sessionContextText += `Trail-Braking Efficiency Score: ${telemetryContext.trailBrakingScore}/100\n`;
     }
@@ -219,7 +244,7 @@ export async function handleRaceEngineer(body: any): Promise<HandlerResult> {
     if (telemetryContext.keyCorners && Array.isArray(telemetryContext.keyCorners)) {
       sessionContextText += `Key Corner Deltas:\n`;
       telemetryContext.keyCorners.slice(0, 5).forEach((c: any) => {
-        sessionContextText += `  • ${c.corner}: Speed ${c.driverSpeed} km/h (Δ ${c.speedDelta > 0 ? "+" : ""}${c.speedDelta} km/h), Time Δ ${c.timeDelta > 0 ? "+" : ""}${c.timeDelta}s — ${c.verdict || ""}\n`;
+        sessionContextText += `  • ${c.corner}: Speed ${c.driverSpeed} ${spdU(units)} (Δ ${c.speedDelta > 0 ? "+" : ""}${c.speedDelta} ${spdU(units)}), Time Δ ${c.timeDelta > 0 ? "+" : ""}${c.timeDelta}s — ${c.verdict || ""}\n`;
       });
     }
   }
@@ -242,7 +267,9 @@ Guidelines:
    - F1 23/24: 1-50 wings, 1-41 suspension, 50-100% on-throttle diff.
 4. If recommending setup changes, format them cleanly with bullet points:
    • Component: [Setting Change] (Brief technical rationale)
-5. Be concise and high-signal. Avoid fluff or generic motivational padding. Keep answers practical and driver-focused.`;
+5. Be concise and high-signal. Avoid fluff or generic motivational padding. Keep answers practical and driver-focused.
+
+${unitsDirective(units)}`;
 
   try {
     const formattedMessages = [
@@ -263,7 +290,8 @@ Guidelines:
       lastUserMessage,
       activeSim,
       setupContext,
-      telemetryContext
+      telemetryContext,
+      units
     );
 
     return NextResponse.json({ reply: fallbackReply });
@@ -277,7 +305,8 @@ function generateProceduralEngineerResponse(
   userQuery: string,
   sim: string,
   setupContext?: any,
-  telemetryContext?: any
+  telemetryContext?: any,
+  units?: string
 ): string {
   const query = userQuery.toLowerCase();
   const car = setupContext?.car || "your car";
@@ -309,23 +338,23 @@ Monitor your steering input: if you exceed 90° of wheel lock while the car is p
 
   if (query.includes("tyre") || query.includes("pressure") || query.includes("temp") || query.includes("psi")) {
     const t = telemetryContext?.tyres;
-    const flP = t?.FL?.pressure || "26.8 psi";
-    const frP = t?.FR?.pressure || "27.1 psi";
+    const flP = t?.FL?.pressure || uPsi(26.8, units);
+    const frP = t?.FR?.pressure || uPsi(27.1, units);
 
     return `Radio check driver, let's review your tyre telemetry.
 Current hot readings: FL at ${flP}, FR at ${frP}.
 
 For ${sim}:
-• **Target Operating Window**: GT3 slicks operate best at 26.8–27.2 psi hot. If you're building beyond 27.5 psi, you'll lose lateral traction and overheat the shoulders.
-• **Asymmetric Loading**: On clockwise circuits like Spa and Monza, the front-left and rear-left take high lateral load. Start cold pressures on the left side roughly 0.3–0.5 psi lower than the right to equalize hot pressures mid-stint.
-• **Camber Adjustment**: If inner temps are >15°C hotter than outer temps, decrease negative camber by 0.2° to prevent blistering on the inside shoulder.`;
+• **Target Operating Window**: GT3 slicks operate best at ${uPsiRange(26.8, 27.2, units)} hot. If you're building beyond ${uPsi(27.5, units)}, you'll lose lateral traction and overheat the shoulders.
+• **Asymmetric Loading**: On clockwise circuits like Spa and Monza, the front-left and rear-left take high lateral load. Start cold pressures on the left side roughly ${uPsiRange(0.3, 0.5, units)} lower than the right to equalize hot pressures mid-stint.
+• **Camber Adjustment**: If inner temps are >${uTemp(15, units)} hotter than outer temps, decrease negative camber by 0.2° to prevent blistering on the inside shoulder.`;
   }
 
   if (query.includes("turn 1") || query.includes("t1") || query.includes("hairpin") || query.includes("la source")) {
     return `Looking at the Turn 1 telemetry trace:
 The key to Turn 1 is squaring off the exit for maximum traction onto the following straight.
 • **Braking**: Peak deceleration needs to happen in a straight line before steering lock. Don't carry deep trail-braking past the apex or you'll delay throttle pickup.
-• **Mechanical Setup Fix**: If you're getting exit power oversteer out of the hairpin, soften rear suspension spring rates or lower rear tyre pressures by 0.2 psi to plant the rear contact patch.`;
+• **Mechanical Setup Fix**: If you're getting exit power oversteer out of the hairpin, soften rear suspension spring rates or lower rear tyre pressures by ${uPsi(0.2, units)} to plant the rear contact patch.`;
   }
 
   if (query.includes("kerb") || query.includes("bump") || query.includes("chicane")) {
@@ -349,17 +378,17 @@ Give me your feedback and I'll call out the exact click adjustments to make in t
 }
 
 
-function getDefaultAdaptiveSetup(car: string, track: string, driverStyle: string, balancePreference: string) {
+function getDefaultAdaptiveSetup(car: string, track: string, driverStyle: string, balancePreference: string, units?: string) {
   return {
     philosophy: `Engineered specifically for your ${driverStyle || "Heavy Trail-Braker"} technique and ${balancePreference || "Neutral Balance"} requirement on ${track}. The mechanical roll balance has been softened at the front axle to maximize contact patch grip under trail-braking, eliminating understeer while keeping the rear axle stable on power exit.`,
     sections: [
       {
         title: "Tyres & Cold Pressures",
         items: [
-          { label: "Front Left Cold Pressure", value: "26.4 psi", styleNote: "Compensates for high lateral loading" },
-          { label: "Front Right Cold Pressure", value: "26.7 psi", styleNote: "Matches circuit corner weight distribution" },
-          { label: "Rear Left Cold Pressure", value: "26.2 psi", styleNote: "Maximizes traction patch on exit drive" },
-          { label: "Rear Right Cold Pressure", value: "26.4 psi", styleNote: "Equalizes thermal spread" },
+          { label: "Front Left Cold Pressure", value: `${uPsi(26.4, units)}`, styleNote: "Compensates for high lateral loading" },
+          { label: "Front Right Cold Pressure", value: `${uPsi(26.7, units)}`, styleNote: "Matches circuit corner weight distribution" },
+          { label: "Rear Left Cold Pressure", value: `${uPsi(26.2, units)}`, styleNote: "Maximizes traction patch on exit drive" },
+          { label: "Rear Right Cold Pressure", value: `${uPsi(26.4, units)}`, styleNote: "Equalizes thermal spread" },
         ],
       },
       {
@@ -426,6 +455,7 @@ export async function handleAnalyzeTelemetry(body: any): Promise<HandlerResult> 
       anomalies,
       lapComparison,
       frictionCircle,
+      units,
     } = body;
 
     if (!game || !car || !track) {
@@ -477,10 +507,10 @@ Driver Style: ${driverStyle || "Heavy Trail-Braker"} | Balance Target: ${balance
 Driver Complaint: ${driverComplaint || "Analyze overall lap pace, entry stability, and apex rotation"}
 
 === METRICS ===
-Lap Time: ${summaryMetrics?.lapTime || "N/A"} | Top Speed: ${summaryMetrics?.topSpeed || "N/A"} km/h
+Lap Time: ${summaryMetrics?.lapTime || "N/A"} | Top Speed: ${summaryMetrics?.topSpeed || "N/A"} ${spdU(units)}
 Trail-Braking Score: ${summaryMetrics?.trailBrakingScore ?? 75}/100 | Throttle Score: ${summaryMetrics?.throttleSmoothness ?? 80}/100 | Scrub Index: ${summaryMetrics?.steeringScrub ?? 70}/100
 Peak Braking Decel: ${summaryMetrics?.maxDecelG ?? 1.8} G | Peak Lat Accel: ${summaryMetrics?.maxLatG ?? 2.2} G
-Tyres (FL/FR/RL/RR): ${summaryMetrics?.tyres?.FL?.temp || "84°C"}/${summaryMetrics?.tyres?.FR?.temp || "86°C"}/${summaryMetrics?.tyres?.RL?.temp || "82°C"}/${summaryMetrics?.tyres?.RR?.temp || "83°C"}
+Tyres (FL/FR/RL/RR): ${summaryMetrics?.tyres?.FL?.temp || uTemp(84, units)}/${summaryMetrics?.tyres?.FR?.temp || uTemp(86, units)}/${summaryMetrics?.tyres?.RL?.temp || uTemp(82, units)}/${summaryMetrics?.tyres?.RR?.temp || uTemp(83, units)}
 ${comparisonText}
 ${frictionCircleText}
 Telemetry Traces: ${compactTelemetrySlice}
@@ -488,6 +518,8 @@ Telemetry Traces: ${compactTelemetrySlice}
 
     const systemPrompt = `You are a World-Class Chief Performance & Race Telemetry Engineer (F1 & GT3 vehicle dynamics expert).
 Analyze the telemetry metrics and synthesize an in-depth diagnosis plus a COMPLETE, CALIBRATED CAR SETUP tailored to the driver's natural driving style (${driverStyle || 'Heavy Trail-Braker'}) and balance preference (${balancePreference || 'Neutral Balance'}).
+
+${unitsDirective(units)}
 
 Output ONLY valid JSON matching this schema:
 {
@@ -589,7 +621,7 @@ Output ONLY valid JSON matching this schema:
         0.4
       );
       if (!analysis.adaptiveSetup || !analysis.adaptiveSetup.sections || analysis.adaptiveSetup.sections.length === 0) {
-        analysis.adaptiveSetup = getDefaultAdaptiveSetup(car, track, driverStyle, balancePreference);
+        analysis.adaptiveSetup = getDefaultAdaptiveSetup(car, track, driverStyle, balancePreference, units);
       }
       if (!analysis.pitRadioMessage) {
         analysis.pitRadioMessage = `“Box this lap, telemetry confirmed. We've applied your ${driverStyle} setup calibration. Attack the entries with confidence.”`;
@@ -638,7 +670,7 @@ Output ONLY valid JSON matching this schema:
             name: "Tyre Management",
             score: 86,
             status: "Optimal",
-            feedback: `Hot pressures (${summaryMetrics?.tyres?.FL?.pressure || "27.2 psi"} FL, ${summaryMetrics?.tyres?.FR?.pressure || "27.4 psi"} FR) remain well within the working window.`,
+            feedback: `Hot pressures (${summaryMetrics?.tyres?.FL?.pressure || uPsi(27.2, units)} FL, ${summaryMetrics?.tyres?.FR?.pressure || uPsi(27.4, units)} FR) remain well within the working window.`,
           },
           {
             name: "Chassis Balance",
@@ -691,7 +723,7 @@ Output ONLY valid JSON matching this schema:
             rationale: "Improves bump compliance over apex kerbing and prevents front wash under lateral transition.",
           },
         ],
-        adaptiveSetup: getDefaultAdaptiveSetup(car, track, driverStyle, balancePreference),
+        adaptiveSetup: getDefaultAdaptiveSetup(car, track, driverStyle, balancePreference, units),
         pitRadioMessage: `“Box this lap, telemetry looks clear. We're bleeding 3 tenths on entry by dropping the brake too fast. We've dialed in 1 click softer on the front ARB and bumped rear brake bias back half a percent. Get back out there and trust the front.”`,
       };
 

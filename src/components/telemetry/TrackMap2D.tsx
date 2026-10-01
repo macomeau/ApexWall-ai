@@ -8,6 +8,7 @@ import {
   LapComparisonSummary,
 } from "@/types/telemetry";
 import { REAL_CIRCUITS } from "@/lib/circuit-geometries";
+import { useUnits } from "@/components/session/UnitsContext";
 
 interface TrackMap2DProps {
   data: TrackMapData;
@@ -32,6 +33,7 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
   onSelectCorner,
   onSelectCircuit,
 }) => {
+  const { units, fmt } = useUnits();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -692,18 +694,18 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
               <span className="hover-card-title">
                 {nearestCorner ? nearestCorner.name : `Track at ${Math.round(currentHoverPoint.dist)}m`}
               </span>
-              <span className="hover-card-dist">@{Math.round(currentHoverPoint.dist)}m</span>
+              <span className="hover-card-dist">@{fmt.distance(currentHoverPoint.dist)}</span>
             </div>
             <div className="hover-card-metrics">
               <div className="hover-metric">
                 <span className="m-label">Driver Speed:</span>
-                <span className="m-val text-sky">{Math.round(currentHoverPoint.speed)} km/h</span>
+                <span className="m-val text-sky">{fmt.speed(currentHoverPoint.speed)}</span>
               </div>
 
               {benchmarkMode === "pro" && currentHoverPoint.refSpeed != null && (
                 <div className="hover-metric">
                   <span className="m-label">Benchmark:</span>
-                  <span className="m-val text-amber">{Math.round(currentHoverPoint.refSpeed)} km/h</span>
+                  <span className="m-val text-amber">{fmt.speed(currentHoverPoint.refSpeed)}</span>
                 </div>
               )}
 
@@ -752,16 +754,16 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
               <span className="corner-name">{activeCorner.name}</span>
             </div>
             <div className="corner-card-details">
-              <span>Apex: {Math.round(activeCorner.dist)}m</span>
+              <span>Apex: {fmt.distance(activeCorner.dist)}</span>
               {activeCorner.driverSpeed != null && (
-                <span className="text-sky">Driver Apex: {Math.round(activeCorner.driverSpeed)} km/h</span>
+                <span className="text-sky">Driver Apex: {fmt.speed(activeCorner.driverSpeed)}</span>
               )}
               {benchmarkMode === "pro" && activeCorner.refSpeed != null && (
-                <span className="text-amber">Ref: {Math.round(activeCorner.refSpeed)} km/h</span>
+                <span className="text-amber">Ref: {fmt.speed(activeCorner.refSpeed)}</span>
               )}
               {benchmarkMode === "pro" && activeCorner.speedDelta != null && (
                 <span className={activeCorner.speedDelta >= 0 ? "text-emerald" : "text-rose"}>
-                  Δv: {activeCorner.speedDelta > 0 ? "+" : ""}{activeCorner.speedDelta.toFixed(1)} km/h
+                  Δv: {activeCorner.speedDelta > 0 ? "+" : ""}{fmt.speed(Math.abs(activeCorner.speedDelta), 1)}
                 </span>
               )}
               {benchmarkMode === "pro" && activeCorner.timeDelta != null && (
@@ -813,9 +815,9 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
         <div className="trackmap-legend">
           {colorMode === "speed" && (
             <div className="legend-speed-bar">
-              <span className="legend-speed-label">60 km/h</span>
+              <span className="legend-speed-label">{units === "imperial" ? "37 mph" : "60 km/h"}</span>
               <div className="speed-gradient-strip"></div>
-              <span className="legend-speed-label">330+ km/h</span>
+              <span className="legend-speed-label">{units === "imperial" ? "205+ mph" : "330+ km/h"}</span>
             </div>
           )}
 
