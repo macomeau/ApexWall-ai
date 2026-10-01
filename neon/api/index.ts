@@ -126,6 +126,35 @@ app.all("/api/auth/*", async (c) => {
   }
   for (const sc of cookies) out.append("set-cookie", sc);
 
+  // --- Session cookie repair for OAuth logins ---
+  // The Google OAuth flow bounces across sites (app → auth server → Google →
+  // auth server → app) and the upstream sets the session cookie with
+  // `SameSite=None; Partitioned` — the classic third-party-tracker shape.
+  // Browsers with aggressive tracking prevention (Safari ITP, Comet's shields)
+  // delete cookies set during that bounce as bounce-tracking state, even
+  // though the cookie itself is first-party. Email login doesn't bounce, so
+  // it survives. Re-emitting the same session value with standard first-party
+  // attributes (`SameSite=Lax`, no `Partitioned`) on a plain same-site fetch
+  // response — outside any redirect chain — stores a cookie the browser no
+  // longer associates with the bounce. This runs on every successful auth API
+  // call carrying the session, so the first getSession after the OAuth
+  // landing repairs the cookie while it's still present.
+  if (upstream.status >= 200 && upstream.status < 300) {
+    const reqCookies = c.req.header("cookie") || "";
+    const m = reqCookies.match(
+      /(?:^|;\s*)__Secure-neon-auth\.session_token=([^;]+)/
+    );
+    const alreadySet = cookies.some((sc) =>
+      sc.startsWith("__Secure-neon-auth.session_token=")
+    );
+    if (m && !alreadySet) {
+      out.append(
+        "set-cookie",
+        `__Secure-neon-auth.session_token=${m[1]}; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax`
+      );
+    }
+  }
+
   return new Response(upstream.body, {
     status: upstream.status,
     statusText: upstream.statusText,
