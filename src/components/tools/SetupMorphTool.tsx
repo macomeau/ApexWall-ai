@@ -31,7 +31,7 @@ import { useUnits } from '@/components/session/UnitsContext';
 import { SetupExportModal } from '../setup/SetupExportModal';
 
 export const SetupMorphTool: React.FC = () => {
-  const { fmt } = useUnits();
+  const { fmt, units } = useUnits();
   const [car, setCar] = useState("Ferrari 296 GT3");
   const [track, setTrack] = useState("Spa-Francorchamps");
   const [game, setGame] = useState("Assetto Corsa");
@@ -50,8 +50,9 @@ export const SetupMorphTool: React.FC = () => {
 
   const [savedVaultNotice, setSavedVaultNotice] = useState(false);
 
-  // Standard high-fidelity baseline GT3 / GT setup
-  const [sections, setSections] = useState<SetupSection[]>([
+  // Standard high-fidelity baseline GT3 / GT setup.
+  // Rebuilt when the unit system changes so the baseline never mixes bar/psi.
+  const sections: SetupSection[] = useMemo(() => ([
     {
       title: "Tyres & Pressures",
       items: [
@@ -87,7 +88,7 @@ export const SetupMorphTool: React.FC = () => {
         { label: "Differential Preload", value: "60 Nm" },
       ],
     },
-  ]);
+  ]), [fmt, units]);
 
   const morphResult: MorphResult = useMemo(() => {
     return morphSetupConditions(
@@ -103,9 +104,10 @@ export const SetupMorphTool: React.FC = () => {
         airTemp: targetAirTemp,
         weather: targetWeather,
         fuelLiters: targetFuel,
-      }
+      },
+      units
     );
-  }, [sections, baseTrackTemp, baseAirTemp, baseWeather, baseFuel, targetTrackTemp, targetAirTemp, targetWeather, targetFuel]);
+  }, [sections, baseTrackTemp, baseAirTemp, baseWeather, baseFuel, targetTrackTemp, targetAirTemp, targetWeather, targetFuel, units]);
 
   const deltaTrack = targetTrackTemp - baseTrackTemp;
   const deltaFuel = targetFuel - baseFuel;

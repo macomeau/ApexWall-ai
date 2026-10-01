@@ -1,4 +1,5 @@
 import { SetupSection, SetupItem } from "@/types/telemetry";
+import { barToPsi, psiToBar } from "@/lib/units";
 
 export interface MorphInputConditions {
   trackTemp: number; // in Celsius
@@ -6,6 +7,8 @@ export interface MorphInputConditions {
   weather: "optimum" | "greasy" | "green" | "damp" | "wet";
   fuelLiters: number;
 }
+
+export type MorphDisplayUnits = "metric" | "imperial";
 
 export interface MorphedItemDiff {
   label: string;
@@ -33,11 +36,18 @@ function parseNumber(val: string, fallback: number = 0): number {
 /**
  * Computes thermodynamic and aerodynamic setup adaptations
  * based on asphalt temperature, ambient climate, wetness, and fuel load.
+ *
+ * The tyre-pressure math is always done internally in psi (Gay-Lussac:
+ * ~0.11 psi per +1°C asphalt), but the baseline value's unit is detected
+ * from its label ("bar" vs "psi") and the morphed output is formatted in
+ * `displayUnits`, so metric and imperial baselines both work and the
+ * table never mixes bar and psi.
  */
 export function morphSetupConditions(
   baselineSections: SetupSection[],
   baseline: MorphInputConditions,
-  target: MorphInputConditions
+  target: MorphInputConditions,
+  displayUnits: MorphDisplayUnits = "imperial"
 ): MorphResult {
   const deltaTrack = target.trackTemp - baseline.trackTemp;
   const deltaAir = target.airTemp - baseline.airTemp;
@@ -70,7 +80,10 @@ export function morphSetupConditions(
         lower.includes("rear right")
       ) {
         if (!lower.includes("brake") && !lower.includes("camber") && !lower.includes("toe")) {
-          const basePsi = parseNumber(item.value, 26.5);
+          // Baseline may be labelled in bar (metric) or psi (imperial) — normalize to psi for the physics.
+          const isBar = lower.includes("bar") || item.value.toLowerCase().includes("bar");
+          const rawNum = parseNumber(item.value, isBar ? 1.83 : 26.5);
+          const basePsi = isBar ? barToPsi(rawNum) : rawNum;
           let offset = 0;
 
           if (isWet) {
@@ -93,8 +106,13 @@ export function morphSetupConditions(
           if (Math.abs(offset) >= 0.1) {
             const finalPsi = Math.max(18.0, Math.min(36.0, Number((basePsi + offset).toFixed(1))));
             if (finalPsi !== basePsi) {
-              morphedVal = `${finalPsi} psi`;
-              deltaStr = `${offset > 0 ? "+" : ""}${offset.toFixed(1)} psi`;
+              if (displayUnits === "metric") {
+                morphedVal = `${psiToBar(finalPsi).toFixed(2)} bar`;
+                deltaStr = `${offset > 0 ? "+" : ""}${psiToBar(offset).toFixed(2)} bar`;
+              } else {
+                morphedVal = `${finalPsi} psi`;
+                deltaStr = `${offset > 0 ? "+" : ""}${offset.toFixed(1)} psi`;
+              }
               changed = true;
             }
           }

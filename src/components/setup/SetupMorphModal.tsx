@@ -43,7 +43,7 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
   onApplyMorphedSetup,
   onOpenExportModal,
 }) => {
-  const { fmt } = useUnits();
+  const { fmt, units } = useUnits();
   // Extract initial baseline numbers from context
   const parseInitNum = (str?: string, fallback: number = 28) => {
     if (!str) return fallback;
@@ -93,9 +93,10 @@ export const SetupMorphModal: React.FC<SetupMorphModalProps> = ({
         airTemp: targetAirTemp,
         weather: targetWeather,
         fuelLiters: targetFuel,
-      }
+      },
+      units
     );
-  }, [context.sections, baselineConditions, targetTrackTemp, targetAirTemp, targetWeather, targetFuel]);
+  }, [context.sections, baselineConditions, targetTrackTemp, targetAirTemp, targetWeather, targetFuel, units]);
 
   if (!isOpen) return null;
 
