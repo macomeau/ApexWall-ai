@@ -144,10 +144,12 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const [savedAdaptiveVault, setSavedAdaptiveVault] = useState(false);
 
   // Cloud Telemetry Library (synced via Postgres — phone <-> computer)
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const [library, setLibrary] = useState<TelemetrySessionMeta[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "error" | "auth-error"
+  >("idle");
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
 
   // Auto-learned circuit geometries (synced via Postgres, per user).
@@ -179,6 +181,10 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       const res = await fetch("/api/telemetry");
       if (res.ok) {
         setLibrary(await res.json());
+      } else if (res.status === 401) {
+        // Cookie dropped mid-session: clear the stale logged-in UI.
+        await refreshSession();
+        setLibrary([]);
       }
     } catch {
       /* library is best-effort */
@@ -362,6 +368,14 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(compactForSave(body)),
       });
+      if (res.status === 401) {
+        // Session cookie gone (browser dropped it / expired server-side).
+        // Re-probe auth so the UI stops showing a stale logged-in state,
+        // and tell the user to sign in again instead of "will retry".
+        await refreshSession();
+        setSaveState("auth-error");
+        return;
+      }
       if (!res.ok) throw new Error("save failed");
       setSaveState("saved");
       refreshLibrary();
@@ -1287,6 +1301,11 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
           {saveState === "error" && (
             <div className="library-status err">
               Couldn&apos;t save this session — it will retry on the next analysis.
+            </div>
+          )}
+          {saveState === "auth-error" && (
+            <div className="library-status err">
+              Your sign-in expired — sign in again and re-run the analysis to save.
             </div>
           )}
 

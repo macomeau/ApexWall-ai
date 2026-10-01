@@ -19,6 +19,9 @@ interface AuthContextType {
   signInWithEmail: (email: string, password: string) => Promise<{ error: any }>;
   signUpWithEmail: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  /** Re-probe /api/auth/get-session and sync user/session state (clears
+   *  stale logged-in UI after the browser drops the session cookie). */
+  refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,6 +110,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
+  const refreshSession = async () => {
+    try {
+      const { data, error } = await authClient.getSession();
+      if (error) {
+        setIsConfigured(false);
+        setUser(null);
+        setSession(null);
+      } else {
+        setIsConfigured(true);
+        setSession(data ?? null);
+        setUser(data?.user ?? null);
+      }
+    } catch {
+      setUser(null);
+      setSession(null);
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -118,6 +139,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithEmail,
         signUpWithEmail,
         signOut,
+        refreshSession,
       }}
     >
       {children}
