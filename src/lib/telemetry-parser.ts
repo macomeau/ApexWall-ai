@@ -1,7 +1,7 @@
 import { ParsedTelemetryFile, TelemetryPoint, TelemetryAnomaly, MinCornerSpeed } from "@/types/telemetry";
 
 /**
- * Parse a telemetry CSV into a single analyzed lap.
+ * Parse a telemetry CSV into analyzed laps.
  *
  * Handles two families of exports:
  *  - Mu / iRacing-style: metadata rows up top, a units row under the header,
@@ -11,9 +11,12 @@ import { ParsedTelemetryFile, TelemetryPoint, TelemetryAnomaly, MinCornerSpeed }
  *  - MoTeC-style: plain header + data, km/h, deg, psi assumptions.
  *
  * Column resolution is exact-match first (normalized), fuzzy second, and
- * unit conversions are driven by the units row when present. When a Lap
- * column exists, the fastest complete lap is analyzed instead of the whole
- * session file.
+ * unit conversions are driven by the units row when present.
+ *
+ * - parseTelemetryCSVLaps: parses every complete lap in the file (used for
+ *   the in-app lap selector).
+ * - parseTelemetryCSV: the historical entry point — returns the fastest
+ *   complete lap when a Lap column exists, otherwise the whole file.
  */
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -30,7 +33,24 @@ function findColumn(headers: string[], candidates: Array<{ t: "exact" | "has"; v
 
 const num = (v: number | undefined | null) => (v == null || isNaN(v) ? 0 : v);
 
-export function parseTelemetryCSV(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile {
+type ColMap = {
+  time: number | null; dist: number | null; speed: number | null;
+  throttle: number | null; brake: number | null; steer: number | null;
+  gear: number | null; rpm: number | null; latG: number | null; longG: number | null;
+  tempFL: number | null; tempFR: number | null; tempRL: number | null; tempRR: number | null;
+  pressFL: number | null; pressFR: number | null; pressRL: number | null; pressRR: number | null;
+  lap: number | null;
+};
+
+interface RawRow {
+  t: number; lap: number; dist: number; speed: number; thr: number; brk: number;
+  steer: number; gear: number; rpm: number; latG: number; longG: number;
+  tFL: number; tFR: number; tRL: number; tRR: number;
+  pFL: number; pFR: number; pRL: number; pRR: number;
+}
+
+// ---- Stage 1: header/delimiter/units detection, column mapping, raw rows ----
+function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap } {
   const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length < 5) {
     throw new Error("Telemetry file contains too few rows to analyze.");
@@ -77,7 +97,7 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
   // ---- Column resolution: exact (normalized) first, fuzzy fallback second ----
   const E = (v: string) => ({ t: "exact" as const, v });
   const H = (v: string) => ({ t: "has" as const, v });
-  const col = {
+  const col: ColMap = {
     time: findColumn(rawHeaders, [E("sessiontime"), E("time"), H("laptime")]),
     dist: findColumn(rawHeaders, [E("lapdist"), E("distance"), E("dist"), H("lapdist")]),
     speed: findColumn(rawHeaders, [E("speed"), E("groundspeed"), E("kmh"), E("kph"), E("mph"), H("speed")]),
@@ -122,12 +142,6 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
   const toPct = (v: number, isPctUnit: boolean) =>
     Math.min(100, Math.max(0, Math.round(isPctUnit || v > 1.05 ? v : v * 100)));
 
-  interface RawRow {
-    t: number; lap: number; dist: number; speed: number; thr: number; brk: number;
-    steer: number; gear: number; rpm: number; latG: number; longG: number;
-    tFL: number; tFR: number; tRL: number; tRR: number;
-    pFL: number; pFR: number; pRL: number; pRR: number;
-  }
   const rows: RawRow[] = [];
   const get = (cells: number[], c: number | null) => (c == null ? NaN : cells[c]);
 
@@ -171,35 +185,34 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
   if (rows.length === 0) {
     throw new Error("Could not parse numeric telemetry data from the file.");
   }
+  return { rows, col };
+}
 
-  // ---- Lap selection: fastest complete lap when a Lap column exists ----
-  let lapRows = rows;
-  let lapNumber = 1;
-  if (col.lap != null) {
-    const groups = new Map<number, RawRow[]>();
-    for (const r of rows) {
-      const g = groups.get(r.lap) ?? [];
-      g.push(r);
-      groups.set(r.lap, g);
-    }
-    const hasRealLaps = Array.from(groups.keys()).some(l => l > 0);
-    let best: RawRow[] | null = null;
-    let bestDur = Infinity;
-    let mostPoints: RawRow[] | null = null;
-    groups.forEach((g, lap) => {
-      if (hasRealLaps && lap <= 0) return; // skip out-lap / pit rows
-      if (g.length < 60) return;
-      if (!mostPoints || g.length > mostPoints.length) mostPoints = g;
-      let mn = Infinity, mx = -Infinity;
-      for (const r of g) { if (r.t < mn) mn = r.t; if (r.t > mx) mx = r.t; }
-      const dur = mx - mn;
-      if (dur >= 15 && dur < bestDur) { bestDur = dur; best = g; }
-    });
-    const chosen = best ?? mostPoints ?? rows;
-    lapRows = chosen;
-    lapNumber = chosen[0]?.lap > 0 ? chosen[0].lap : 1;
+// ---- Stage 2: split raw rows into per-lap groups (valid laps only) ----
+function groupLapRows(rows: RawRow[], col: ColMap): { lapNumber: number; rows: RawRow[] }[] {
+  if (col.lap == null) return [{ lapNumber: 1, rows }];
+  const groups = new Map<number, RawRow[]>();
+  for (const r of rows) {
+    const g = groups.get(r.lap) ?? [];
+    g.push(r);
+    groups.set(r.lap, g);
   }
+  const hasRealLaps = Array.from(groups.keys()).some(l => l > 0);
+  const valid: { lapNumber: number; rows: RawRow[] }[] = [];
+  let mostPoints: { lapNumber: number; rows: RawRow[] } | null = null;
+  groups.forEach((g, lap) => {
+    if (hasRealLaps && lap <= 0) return; // skip out-lap / pit rows
+    const entry = { lapNumber: lap > 0 ? lap : 1, rows: g };
+    if (!mostPoints || g.length > mostPoints.rows.length) mostPoints = entry;
+    if (g.length < 60) return;
+    valid.push(entry);
+  });
+  const out = valid.length > 0 ? valid : mostPoints ? [mostPoints] : [{ lapNumber: 1, rows }];
+  return out.sort((a, b) => a.lapNumber - b.lapNumber);
+}
 
+// ---- Stage 3: turn one lap's rows into a fully analyzed ParsedTelemetryFile ----
+function parseLapRows(lapRows: RawRow[], col: ColMap, lapNumber: number, filename: string): ParsedTelemetryFile {
   // Engine speed sanity: Mu labels Engine0_RPM as "rpm" but emits rad/s.
   // Real rpm traces peak well above 1500; rad/s traces never do.
   let rpmMax = 0;
@@ -348,4 +361,34 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
     points: downsampled,
     channels: Object.keys(col).filter(k => (col as Record<string, number | null>)[k] != null),
   };
+}
+
+/**
+ * Parse every complete lap in a telemetry CSV, sorted by lap number.
+ * Used by the in-app lap selector. Files without a Lap column (or with no
+ * valid lap groups) yield a single entry, same as parseTelemetryCSV.
+ */
+export function parseTelemetryCSVLaps(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile[] {
+  const { rows, col } = parseRawRows(csvText);
+  return groupLapRows(rows, col).map(g => parseLapRows(g.rows, col, g.lapNumber, filename));
+}
+
+/**
+ * Historical entry point: returns the fastest complete lap when a Lap
+ * column exists, otherwise the whole file as a single lap.
+ */
+export function parseTelemetryCSV(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile {
+  const laps = parseTelemetryCSVLaps(csvText, filename);
+  let best: ParsedTelemetryFile | null = null;
+  let bestDur = Infinity;
+  let most: ParsedTelemetryFile | null = null;
+  for (const l of laps) {
+    if (!most || l.rawCount > most.rawCount) most = l;
+    const pts = l.points;
+    // Downsampling always keeps the first and last raw points, so this is
+    // exactly the raw lap duration the old selection logic used.
+    const dur = pts.length > 1 ? pts[pts.length - 1].time - pts[0].time : 0;
+    if (dur >= 15 && dur < bestDur) { bestDur = dur; best = l; }
+  }
+  return best ?? most ?? laps[0];
 }

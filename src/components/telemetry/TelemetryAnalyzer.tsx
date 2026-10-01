@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { parseTelemetryCSV } from "@/lib/telemetry-parser";
+import { parseTelemetryCSV, parseTelemetryCSVLaps } from "@/lib/telemetry-parser";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
 import { computeLapComparison } from "@/lib/telemetry-comparison";
 import { computeGGFrictionCircle } from "@/lib/telemetry-friction-circle";
@@ -119,6 +119,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
 
   // Telemetry Data State
   const [parsedTelemetry, setParsedTelemetry] = useState<ParsedTelemetryFile | null>(null);
+  const [availableLaps, setAvailableLaps] = useState<ParsedTelemetryFile[]>([]);
   const [referenceTelemetry, setReferenceTelemetry] = useState<ParsedTelemetryFile | null>(null);
   const [lapComparison, setLapComparison] = useState<LapComparisonSummary | null>(null);
   const [frictionCircleData, setFrictionCircleData] = useState<GGFrictionCircleData | null>(null);
@@ -458,6 +459,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       const p = s.payload || {};
       const f = p.form || {};
       const sum = p.summary || {};
+      // Library entries store a single analyzed lap.
+      setAvailableLaps([]);
 
       setGame(f.game ?? game);
       setCar(f.car ?? car);
@@ -629,11 +632,25 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     }
   };
 
+  // Switch the analyzed lap when a multi-lap file was uploaded. The lap's
+  // charts and friction circle update immediately; the AI analysis belongs
+  // to the previous lap, so it is cleared for a fresh run.
+  const handleLapChange = (lapNumber: number) => {
+    const lap = availableLaps.find((l) => l.lapNumber === lapNumber);
+    if (!lap || parsedTelemetry?.lapNumber === lapNumber) return;
+    setResult(null);
+    setState("empty");
+    setErrorMessage("");
+    setSaveState("idle");
+    processParsedTelemetry(lap);
+  };
+
   const handleFileUpload = async (file: File) => {
     if (file.name.toLowerCase().endsWith(".duckdb")) {
       setIsParsingDuckDB(true);
       try {
         const parsed = await parseDuckDBTelemetry(file);
+        setAvailableLaps([]);
         processParsedTelemetry(parsed);
       } catch (err: any) {
         alert(`Could not parse DuckDB telemetry file: ${err.message}`);
@@ -647,6 +664,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
+        const laps = parseTelemetryCSVLaps(text, file.name);
+        setAvailableLaps(laps.length > 1 ? laps : []);
         const parsed = parseTelemetryCSV(text, file.name);
         processParsedTelemetry(parsed);
       } catch (err: any) {
@@ -1642,11 +1661,27 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 <button
                   type="button"
                   className="file-clear-btn"
-                  onClick={() => setParsedTelemetry(null)}
+                  onClick={() => { setParsedTelemetry(null); setAvailableLaps([]); }}
                 >
                   ✕
                 </button>
               </div>
+              {availableLaps.length > 1 && (
+                <div className="lap-selector">
+                  <span className="lap-selector-label">Lap</span>
+                  {availableLaps.map((l) => (
+                    <button
+                      key={l.lapNumber}
+                      type="button"
+                      className={`lap-pill${parsedTelemetry?.lapNumber === l.lapNumber ? " active" : ""}`}
+                      onClick={() => handleLapChange(l.lapNumber)}
+                      title={`Analyze lap ${l.lapNumber} (${l.lapTime})`}
+                    >
+                      {l.lapNumber} · {l.lapTime}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="detected-channels">
                 {["Speed", "Throttle", "Brake", "Steering", "Gear", "Tyre Temps", "G-Force"].map((ch) => (
                   <span key={ch} className="channel-pill">{ch}</span>
