@@ -560,9 +560,31 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   const processParsedTelemetry = (parsed: ParsedTelemetryFile) => {
     setParsedTelemetry(parsed);
 
-    // Auto-detect track, car, and sim game from filename
-    const lowerName = parsed.filename.toLowerCase();
+    // Auto-detect track/car: prefer Vehicle/Venue from the file's metadata
+    // rows (MoTeC/Mu), snapped to the roster; fall back to filename guessing.
     let detectedTrack = track;
+    let detectedCar = car;
+
+    if (parsed.venue) {
+      const snapped = snapToRoster(parsed.venue, IRACING_TRACKS);
+      if (snapped) {
+        detectedTrack = snapped;
+        setTrack(snapped);
+      }
+    }
+    if (parsed.vehicle) {
+      const snapped = snapToRoster(parsed.vehicle, IRACING_CARS);
+      if (snapped) {
+        detectedCar = snapped;
+        setCar(snapped);
+      }
+    }
+
+    // Filename fallback (only for fields the metadata didn't resolve).
+    const lowerName = parsed.filename.toLowerCase();
+    const trackFromMeta = detectedTrack !== track;
+
+    if (!trackFromMeta) {
 
     if (lowerName.includes("redbull") || lowerName.includes("red_bull") || lowerName.includes("spielberg") || lowerName.includes("rbr") || lowerName.includes("austria")) {
       detectedTrack = "Red Bull Ring (Spielberg GP)";
@@ -593,14 +615,19 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
       setTrack("Circuit de Barcelona-Catalunya");
     }
 
-    if (lowerName.includes("mercedes") || lowerName.includes("amg")) {
-      setCar("Mercedes-AMG GT4");
-    } else if (lowerName.includes("corvette")) {
-      setCar("Corvette C7.R");
-    } else if (lowerName.includes("porsche")) {
-      setCar("Porsche 992 GT3 R");
-    } else if (lowerName.includes("ferrari")) {
-      setCar("Ferrari 296 GT3");
+    } // end filename track fallback
+
+    const carFromMeta = detectedCar !== car;
+    if (!carFromMeta) {
+      if (lowerName.includes("mercedes") || lowerName.includes("amg")) {
+        setCar("Mercedes-AMG GT4");
+      } else if (lowerName.includes("corvette")) {
+        setCar("Corvette C7.R");
+      } else if (lowerName.includes("porsche")) {
+        setCar("Porsche 992 GT3 R");
+      } else if (lowerName.includes("ferrari")) {
+        setCar("Ferrari 296 GT3");
+      }
     }
 
     if (lowerName.includes("iracing") || lowerName.includes(".ibt")) {

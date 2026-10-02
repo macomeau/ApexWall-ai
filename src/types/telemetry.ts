@@ -56,6 +56,10 @@ export interface TelemetryAnomaly {
 
 export interface ParsedTelemetryFile {
   filename: string;
+  /** Vehicle name from the file's metadata rows (MoTeC/Mu), if present. */
+  vehicle?: string;
+  /** Venue/track name from the file's metadata rows (MoTeC/Mu), if present. */
+  venue?: string;
   rawCount: number;
   lapTime: string;
   lapNumber: number;

@@ -50,7 +50,7 @@ interface RawRow {
 }
 
 // ---- Stage 1: header/delimiter/units detection, column mapping, raw rows ----
-function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap } {
+function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap; meta: { vehicle?: string; venue?: string } } {
   const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
   if (lines.length < 5) {
     throw new Error("Telemetry file contains too few rows to analyze.");
@@ -69,6 +69,27 @@ function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap } {
       headerIndex = i;
       break;
     }
+  }
+
+  // File metadata: MoTeC/Mu exports put Vehicle/Venue (and similar) in the
+  // rows above the header, as "Key","Value" pairs, Key,Value, Key: Value or
+  // Key=Value. Extract them so the UI can prepopulate car/track.
+  const META_KEYS: Record<string, "vehicle" | "venue"> = {
+    vehicle: "vehicle", car: "vehicle", carname: "vehicle", vehiclename: "vehicle",
+    venue: "venue", track: "venue", trackname: "venue", venuename: "venue", circuit: "venue",
+  };
+  const meta: { vehicle?: string; venue?: string } = {};
+  const cleanMetaVal = (s: string) => s.trim().replace(/^["']|["']$/g, "").trim();
+  for (let i = 0; i < headerIndex; i++) {
+    const line = lines[i].trim();
+    // Try "Key","Value" / Key,Value (split on first comma not inside quotes)
+    let key = "", val = "";
+    const mComma = line.match(/^\s*"?([^",:=]+?)"?\s*[,]\s*"?([^"]*)"?\s*$/);
+    const mColonEq = line.match(/^\s*([^:=,]+?)\s*[:=]\s*(.+?)\s*$/);
+    const m = mComma ?? mColonEq;
+    if (m) { key = cleanMetaVal(m[1]); val = cleanMetaVal(m[2]); }
+    const slot = META_KEYS[norm(key)];
+    if (slot && val && !meta[slot]) meta[slot] = val;
   }
 
   const rawHeaders = lines[headerIndex].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ""));
@@ -185,7 +206,7 @@ function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap } {
   if (rows.length === 0) {
     throw new Error("Could not parse numeric telemetry data from the file.");
   }
-  return { rows, col };
+  return { rows, col, meta };
 }
 
 // ---- Stage 2: split raw rows into per-lap groups (valid laps only) ----
@@ -212,7 +233,13 @@ function groupLapRows(rows: RawRow[], col: ColMap): { lapNumber: number; rows: R
 }
 
 // ---- Stage 3: turn one lap's rows into a fully analyzed ParsedTelemetryFile ----
-function parseLapRows(lapRows: RawRow[], col: ColMap, lapNumber: number, filename: string): ParsedTelemetryFile {
+function parseLapRows(
+  lapRows: RawRow[],
+  col: ColMap,
+  lapNumber: number,
+  filename: string,
+  meta: { vehicle?: string; venue?: string }
+): ParsedTelemetryFile {
   // Engine speed sanity: Mu labels Engine0_RPM as "rpm" but emits rad/s.
   // Real rpm traces peak well above 1500; rad/s traces never do.
   let rpmMax = 0;
@@ -345,6 +372,8 @@ function parseLapRows(lapRows: RawRow[], col: ColMap, lapNumber: number, filenam
 
   return {
     filename,
+    vehicle: meta.vehicle,
+    venue: meta.venue,
     rawCount: parsedPoints.length,
     lapTime: lapTimeFormatted,
     lapNumber,
@@ -369,8 +398,8 @@ function parseLapRows(lapRows: RawRow[], col: ColMap, lapNumber: number, filenam
  * valid lap groups) yield a single entry, same as parseTelemetryCSV.
  */
 export function parseTelemetryCSVLaps(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile[] {
-  const { rows, col } = parseRawRows(csvText);
-  return groupLapRows(rows, col).map(g => parseLapRows(g.rows, col, g.lapNumber, filename));
+  const { rows, col, meta } = parseRawRows(csvText);
+  return groupLapRows(rows, col).map(g => parseLapRows(g.rows, col, g.lapNumber, filename, meta));
 }
 
 /**
