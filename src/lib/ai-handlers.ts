@@ -7,6 +7,8 @@
  */
 import { callAIWithFallback, callAIChatText } from "./ai";
 import { getGameSetupProfile } from "./game-setup-profiles";
+import { getAuthoritativeCatalog } from "./setup-engine/parameter-catalog";
+import { validateAndRepairSetup, emptyBaselineContext } from "./setup-engine/validator";
 
 export interface HandlerResult {
   status: number;
@@ -157,7 +159,20 @@ Rules:
       { role: "user", content: userBrief },
     ], 2200, 0.4);
 
-    return NextResponse.json(setup);
+    // Deterministic validation: the LLM is never the final authority over
+    // numeric validity. Clamp to catalog limits, snap to authentic steps,
+    // reject non-existent parameters, run cross-parameter sanity.
+    try {
+      const catalog = getAuthoritativeCatalog(game, car, customModProfile);
+      const { repairedSections, report } = validateAndRepairSetup(
+        setup.sections || [],
+        { game, car, catalog, baseline: emptyBaselineContext() }
+      );
+      return NextResponse.json({ ...setup, sections: repairedSections, validationReport: report });
+    } catch (vErr: any) {
+      console.warn("Setup validation failed, returning raw AI setup:", vErr?.message || vErr);
+      return NextResponse.json(setup);
+    }
   } catch (err: any) {
     console.warn(`AI model generation issue, using game-authentic procedural profile for ${profile.displayName}:`, err?.message || err);
 
