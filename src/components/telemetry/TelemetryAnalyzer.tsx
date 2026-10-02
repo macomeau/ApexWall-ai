@@ -1155,6 +1155,9 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
           throttleSmoothness: parsedTelemetry.throttleSmoothness,
           steeringScrub: parsedTelemetry.steeringScrub,
           tyres: aiTyres(parsedTelemetry.tyreStats),
+          phaseBalance: parsedTelemetry.phaseBalance,
+          tyreOptimization: parsedTelemetry.tyreOptimization,
+          driverVsCar: parsedTelemetry.driverVsCar,
         },
         sampledPoints: parsedTelemetry.points.slice(0, 45),
         anomalies: parsedTelemetry.detectedAnomalies,
@@ -1436,6 +1439,7 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 <option>Assetto Corsa Competizione</option>
                 <option>iRacing</option>
                 <option>Assetto Corsa</option>
+                <option>Assetto Corsa Evo</option>
                 <option>rFactor 2</option>
                 <option>Automobilista 2</option>
                 <option>Le Mans Ultimate</option>
@@ -1708,6 +1712,11 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                     <div className="file-meta">
                       {parsedTelemetry.rawCount.toLocaleString()} telemetry points · Lap {parsedTelemetry.lapNumber}: {parsedTelemetry.lapTime}
                     </div>
+                    {parsedTelemetry.phaseBalance && (
+                      <div className="file-meta phase-balance" style={{ marginTop: 2 }}>
+                        Balance: {parsedTelemetry.phaseBalance.verdict}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button

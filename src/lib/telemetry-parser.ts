@@ -370,6 +370,89 @@ function parseLapRows(
     });
   }
 
+  // ---- Corner phase balance: understeer angle (steering minus Ackermann) ----
+  // Positive = understeer (more lock than geometry needs), negative = oversteer.
+  const WHEELBASE_M = 2.7;
+  const STEER_RATIO = 14.0;
+  let entrySum = 0, entryN = 0, midSum = 0, midN = 0, exitSum = 0, exitN = 0;
+  for (const p of parsedPoints) {
+    const speedMs = Math.max(8, p.speed / 3.6);
+    const latAccMs2 = Math.abs(p.latG) * 9.81;
+    if (latAccMs2 > 3.0 && speedMs > 10) {
+      const ackermannDeg = ((WHEELBASE_M * latAccMs2) / (speedMs * speedMs)) * (180 / Math.PI) * STEER_RATIO;
+      const understeerDeg = Number((Math.abs(p.steer) - ackermannDeg).toFixed(2));
+      p.understeerAngle = understeerDeg;
+      if (p.brake > 5 || p.longG < -0.35) { entrySum += understeerDeg; entryN++; }
+      else if (p.throttle >= 30 && p.longG > 0.1) { exitSum += understeerDeg; exitN++; }
+      else if (p.throttle < 30 && Math.abs(p.latG) > 0.6) { midSum += understeerDeg; midN++; }
+    } else {
+      p.understeerAngle = 0;
+    }
+  }
+  const avgEntry = entryN > 0 ? entrySum / entryN : 0;
+  const avgMid = midN > 0 ? midSum / midN : 0;
+  const avgExit = exitN > 0 ? exitSum / exitN : 0;
+  const classifyPhase = (v: number): "Oversteer" | "Neutral" | "Understeer" =>
+    v > 1.2 ? "Understeer" : v < -1.2 ? "Oversteer" : "Neutral";
+  const phaseBalance = {
+    entry: classifyPhase(avgEntry),
+    mid: classifyPhase(avgMid),
+    exit: classifyPhase(avgExit),
+    entryDeltaDeg: Number(avgEntry.toFixed(1)),
+    midDeltaDeg: Number(avgMid.toFixed(1)),
+    exitDeltaDeg: Number(avgExit.toFixed(1)),
+    verdict: `${classifyPhase(avgEntry)} on Entry, ${classifyPhase(avgMid)} at Apex, ${classifyPhase(avgExit)} on Exit`,
+  };
+
+  // ---- Tyre pressure optimization: recommended cold from observed hot ----
+  const targetHot = lastPoint.pressFL > 28.5 ? 29.5 : lastPoint.pressFL < 24.0 ? 23.5 : 26.85;
+  const calcCold = (obsHot: number, baseCold: number) => Number((baseCold + (targetHot - obsHot)).toFixed(2));
+  const tyreOptimization = {
+    targetHot,
+    observedHot: { FL: lastPoint.pressFL, FR: lastPoint.pressFR, RL: lastPoint.pressRL, RR: lastPoint.pressRR },
+    pressureDelta: {
+      FL: Number((targetHot - lastPoint.pressFL).toFixed(2)),
+      FR: Number((targetHot - lastPoint.pressFR).toFixed(2)),
+      RL: Number((targetHot - lastPoint.pressRL).toFixed(2)),
+      RR: Number((targetHot - lastPoint.pressRR).toFixed(2)),
+    },
+    recommendedCold: {
+      FL: calcCold(lastPoint.pressFL, 26.2),
+      FR: calcCold(lastPoint.pressFR, 26.5),
+      RL: calcCold(lastPoint.pressRL, 25.9),
+      RR: calcCold(lastPoint.pressRR, 26.2),
+    },
+    status:
+      Math.abs(targetHot - lastPoint.pressFL) < 0.3 && Math.abs(targetHot - lastPoint.pressFR) < 0.3
+        ? "Within optimal thermal window"
+        : "Cold starting pressure adjustment recommended",
+  };
+
+  // ---- Driver technique vs mechanical setup separation ----
+  const driverTechniquePoints: string[] = [];
+  const mechanicalSetupPoints: string[] = [];
+  if (abruptBrakeDrops > 0) {
+    driverTechniquePoints.push("Abrupt brake release into turn-in: release the pedal progressively to maintain front axle pitch load.");
+  }
+  if (steeringScrubEvents > 0) {
+    driverTechniquePoints.push("Steering wheel turned beyond front tyre grip limit at apex — excess lock generates scrub, not rotation.");
+  }
+  if (throttleHesitations > 0) {
+    driverTechniquePoints.push("Hesitant throttle feed-in on exit: commit to a single progressive application once the car is rotated.");
+  }
+  if (phaseBalance.entry === "Understeer") {
+    mechanicalSetupPoints.push("Entry understeer: shift brake bias 0.5–1.0% rearward or soften front bump damping.");
+  }
+  if (phaseBalance.mid === "Understeer") {
+    mechanicalSetupPoints.push("Mid-corner push: soften front anti-roll bar or raise rear ride height (more aero rake).");
+  }
+  if (phaseBalance.exit === "Oversteer") {
+    mechanicalSetupPoints.push("Exit oversteer: increase diff power lock or stiffen rear slow rebound.");
+  }
+  if (phaseBalance.exit === "Understeer") {
+    mechanicalSetupPoints.push("Exit understeer: reduce diff power lock or soften rear anti-roll bar.");
+  }
+
   return {
     filename,
     vehicle: meta.vehicle,
@@ -387,6 +470,9 @@ function parseLapRows(
     steeringScrub,
     tyreStats,
     detectedAnomalies,
+    phaseBalance,
+    tyreOptimization,
+    driverVsCar: { driverTechniquePoints, mechanicalSetupPoints },
     points: downsampled,
     channels: Object.keys(col).filter(k => (col as Record<string, number | null>)[k] != null),
   };
