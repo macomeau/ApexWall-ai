@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { parseTelemetryCSV, parseTelemetryCSVLaps } from "@/lib/telemetry-parser";
+import { generateDemoCSV, DEMO_TRACKS } from "@/lib/demo-traces";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
 import { computeLapComparison } from "@/lib/telemetry-comparison";
 import { computeGGFrictionCircle } from "@/lib/telemetry-friction-circle";
@@ -659,11 +660,26 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     }
   };
 
+  // Load a synthetic demo trace (no upload needed). Goes through the same
+  // parse pipeline as a real file, so laps, metadata and stats all behave
+  // identically.
+  const handleLoadDemoTrace = () => {
+    try {
+      const track = DEMO_TRACKS[0];
+      const csv = generateDemoCSV(track, 2);
+      const filename = `demo_${track.venue.toLowerCase().replace(/[^a-z0-9]+/g, "_")}.csv`;
+      const laps = parseTelemetryCSVLaps(csv, filename);
+      setAvailableLaps(laps.length > 1 ? laps : []);
+      processParsedTelemetry(parseTelemetryCSV(csv, filename));
+    } catch (err: any) {
+      alert(`Could not generate demo trace: ${err.message}`);
+    }
+  };
+
   // Switch the analyzed lap when a multi-lap file was uploaded. The lap's
   // charts and friction circle update immediately; the AI analysis belongs
   // to the previous lap, so it is cleared for a fresh run.
-  const handleLapChange = (lapNumber: number) => {
-    const lap = availableLaps.find((l) => l.lapNumber === lapNumber);
+  const handleLapChange = (lapNumber: number) => {    const lap = availableLaps.find((l) => l.lapNumber === lapNumber);
     if (!lap || parsedTelemetry?.lapNumber === lapNumber) return;
     setResult(null);
     setState("empty");
@@ -1663,6 +1679,15 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                 {isParsingDuckDB ? "Reading DuckDB..." : "Browse Files"}
               </button>
             </div>
+            <button
+              type="button"
+              className="dropzone-demo-btn"
+              onClick={handleLoadDemoTrace}
+              disabled={isParsingDuckDB}
+              title="Load a synthetic 2-lap Sebring GT3 trace to try the analysis"
+            >
+              or try a demo trace — no file needed
+            </button>
           </div>
 
           {/* Loaded File Card */}

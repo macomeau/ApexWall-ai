@@ -971,6 +971,27 @@ textarea {
   font-weight: 600;
 }
 
+.dropzone-demo-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 10px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color var(--transition-fast);
+}
+
+.dropzone-demo-btn:hover:not(:disabled) {
+  color: var(--accent-primary);
+}
+
+.dropzone-demo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .channel-pill {
   font-size: 10.5px;
   font-family: var(--font-mono);
