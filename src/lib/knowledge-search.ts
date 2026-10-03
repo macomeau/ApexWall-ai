@@ -14,6 +14,7 @@
  * The SQL shape is identical.
  */
 import { sql } from "./db";
+import { SETUP_KNOWLEDGE } from "./setup-knowledge-seed";
 
 export interface KnowledgeHit {
   id: number;
@@ -22,6 +23,68 @@ export interface KnowledgeHit {
   category: string;
   tags: string[];
   score: number;
+}
+
+// Idempotent DDL — ensures the knowledge base exists. Runs on first search.
+// Uses pgvector (Neon) / lakebase_vector (Lakebase) patterns; falls back
+// gracefully if the vector extension is unavailable (text search still works).
+let ensured = false;
+export async function ensureKnowledgeBase(): Promise<void> {
+  if (ensured) return;
+  try {
+    await sql`CREATE EXTENSION IF NOT EXISTS vector`;
+  } catch {
+    // Vector extension unavailable; text search will still work.
+  }
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.setup_knowledge (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'general',
+      tags TEXT[] NOT NULL DEFAULT '{}',
+      embedding vector(1536),
+      search_vector tsvector GENERATED ALWAYS AS (
+        setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+        setweight(to_tsvector('english', coalesce(body, '')), 'B')
+      ) STORED,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_setup_knowledge_search
+    ON public.setup_knowledge USING gin (search_vector)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_setup_knowledge_category
+    ON public.setup_knowledge (category)
+  `;
+  // HNSW index — may fail if pgvector is old or extension missing; non-fatal.
+  try {
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_setup_knowledge_embedding
+      ON public.setup_knowledge USING hnsw (embedding vector_cosine_ops)
+    `;
+  } catch {
+    /* vector index optional */
+  }
+  ensured = true;
+}
+
+/**
+ * Seed the knowledge base (idempotent: clears and re-inserts curated entries).
+ * Call once via the admin endpoint after deploy.
+ */
+export async function seedKnowledgeBase(): Promise<number> {
+  await ensureKnowledgeBase();
+  await sql`DELETE FROM public.setup_knowledge`;
+  for (const entry of SETUP_KNOWLEDGE) {
+    await sql`
+      INSERT INTO public.setup_knowledge (title, body, category, tags)
+      VALUES (${entry.title}, ${entry.body}, ${entry.category}, ${entry.tags})
+    `;
+  }
+  return SETUP_KNOWLEDGE.length;
 }
 
 /**
@@ -34,6 +97,14 @@ export async function searchSetupKnowledge(
   limit: number = 5
 ): Promise<KnowledgeHit[]> {
   if (!query || !query.trim()) return [];
+
+  // Ensure the table exists (idempotent, first-call only).
+  try {
+    await ensureKnowledgeBase();
+  } catch (e) {
+    console.warn("[knowledge] ensure failed:", (e as any)?.message);
+    return [];
+  }
 
   // Full-text query: plainto_tsquery handles natural language safely.
   const textResults = (await sql`

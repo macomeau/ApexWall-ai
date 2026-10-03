@@ -24,6 +24,7 @@ import {
   handleAnalyzeTelemetry,
   handleRaceEngineer,
 } from "../../src/lib/ai-handlers";
+import { seedKnowledgeBase } from "../../src/lib/knowledge-search";
 import {
   listVaultSetups,
   upsertVaultSetup,
@@ -301,6 +302,18 @@ app.get("/api/learned-tracks/:id", async (c) => {
 app.get("/api/health", (c) =>
   c.json({ ok: true, time: new Date().toISOString() })
 );
+
+// One-time admin: seed the RAG knowledge base. Requires auth.
+app.post("/api/admin/seed-knowledge", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  try {
+    const count = await seedKnowledgeBase();
+    return c.json({ ok: true, seeded: count });
+  } catch (e: any) {
+    return c.json({ error: e?.message || "seed failed" }, 500);
+  }
+});
 
 // ---------- static web UI (embedded at build time) ----------
 const MIME: Record<string, string> = {
