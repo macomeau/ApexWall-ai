@@ -190,31 +190,41 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
         : data.points;
 
     if (circuitPoints.length > 1) {
-      // 3A. Asphalt Bed (Wide dark composite track base)
+      // 3A. Asphalt Bed (Wide dark composite track base) — must read clearly
+      // against the near-black canvas background.
       ctx.beginPath();
-      ctx.strokeStyle = "rgba(19, 26, 38, 0.95)";
-      ctx.lineWidth = 15;
+      ctx.strokeStyle = "rgba(51, 65, 85, 0.95)";
+      ctx.lineWidth = 16;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       circuitPoints.forEach((pt, idx) => {
         const cx = toCanvasX(pt.x);
         const cy = toCanvasY(pt.y);
         if (idx === 0) ctx.moveTo(cx, cy);
-        else ctx.lineTo(cx, cy);
+        else {
+          // Break the ribbon at teleport jumps (pit/tow) instead of drawing through them
+          const prev = circuitPoints[idx - 1];
+          if (Math.hypot(pt.x - prev.x, pt.y - prev.y) > 50) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        }
       });
       ctx.closePath();
       ctx.stroke();
 
       // 3B. Track Boundary Edges (White outer and inner rails)
       ctx.beginPath();
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
-      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.lineWidth = 1.6;
       ctx.setLineDash([4, 4]);
       circuitPoints.forEach((pt, idx) => {
         const cx = toCanvasX(pt.x);
         const cy = toCanvasY(pt.y);
         if (idx === 0) ctx.moveTo(cx, cy);
-        else ctx.lineTo(cx, cy);
+        else {
+          const prev = circuitPoints[idx - 1];
+          if (Math.hypot(pt.x - prev.x, pt.y - prev.y) > 50) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        }
       });
       ctx.closePath();
       ctx.stroke();
