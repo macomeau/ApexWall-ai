@@ -73,9 +73,6 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
               <span className="font-extrabold text-sm tracking-tight text-white font-sans">
                 ApexWall
               </span>
-              <span className="text-[10px] font-semibold text-blue-400 px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
-                PRO
-              </span>
               <a
                 href="https://github.com/octavia-23/ApexWall-ai"
                 target="_blank"
