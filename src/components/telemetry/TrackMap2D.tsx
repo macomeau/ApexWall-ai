@@ -328,10 +328,17 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
     }
 
     // 4. Telemetry Racing Line (Segment by Segment based on active colorMode)
+    // Skip teleport segments (pit/tow button): a jump of >50m between
+    // consecutive points is impossible at racing speeds — it's the car
+    // being reset to the pits, not driven.
+    const TELEPORT_JUMP_M = 50;
     if (data.points.length > 1) {
       for (let i = 0; i < data.points.length - 1; i++) {
         const p1 = data.points[i];
         const p2 = data.points[i + 1];
+
+        const jumpDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (jumpDist > TELEPORT_JUMP_M) continue;
 
         const x1 = toCanvasX(p1.x);
         const y1 = toCanvasY(p1.y);
