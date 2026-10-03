@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import Link from "next/link";
 import { parseTelemetryCSV, parseTelemetryCSVLaps } from "@/lib/telemetry-parser";
 import { generateDemoCSV, DEMO_TRACKS } from "@/lib/demo-traces";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
@@ -1301,36 +1302,69 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             03 // TELEMETRY DATA INGEST
           </div>
 
-          {/* Live Rig Bridge banner */}
-          {liveRigStatus?.connected && (
-            <div className="mb-3.5 p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 backdrop-blur-md flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="relative flex items-center justify-center">
-                  <span className="w-3 h-3 rounded-full bg-emerald-400"></span>
-                  <span className="absolute w-3 h-3 rounded-full bg-emerald-400 animate-ping opacity-75"></span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Live Rig Stream Active</span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono font-semibold border border-emerald-500/30">
-                      {liveRigStatus.game}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {liveRigStatus.pointsCount > 0
-                      ? `Telemetry buffer: ${liveRigStatus.pointsCount.toLocaleString()} live points recording at 60Hz.`
-                      : "Ready to capture live telemetry directly from your sim."}
-                  </p>
-                </div>
+          {/* Compact Rig Bridge Connection Bar (always visible) */}
+          {liveRigStatus?.connected ? (
+            <div className="mb-3 px-3.5 py-2 rounded-xl bg-emerald-950/25 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-2 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-emerald-400">Live Rig Active:</span>
+                <span className="text-xs font-mono font-medium text-slate-100 px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30">
+                  {liveRigStatus.game}
+                </span>
+                <span className="text-[11px] text-slate-400 font-mono">
+                  ({liveRigStatus.pointsCount.toLocaleString()} pts recording)
+                </span>
               </div>
               <button
                 type="button"
                 onClick={fetchLatestLiveLapFromRig}
                 disabled={isLoadingLiveLap}
-                className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-lg text-xs shadow-md transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                className="px-3 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-lg text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
               >
-                {isLoadingLiveLap ? "Importing..." : "Import Live Lap from Rig"}
+                {isLoadingLiveLap ? (
+                  <span>Importing...</span>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    <span>Import Live Lap</span>
+                  </>
+                )}
               </button>
+            </div>
+          ) : (
+            <div className="mb-3 px-3.5 py-2 rounded-xl bg-slate-900/50 border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 text-xs text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-slate-600" />
+                <span className="text-slate-300 font-medium text-[11px]">Rig Bridge Standby</span>
+                <span className="hidden sm:inline text-slate-500 text-[11px]">• Direct telemetry from iRacing, AMS2, Forza, F1 &amp; ACC</span>
+              </div>
+              <div className="flex items-center gap-3 text-xs">
+                <a
+                  href="https://github.com/macomeau/ApexWall-ai/raw/main/public/downloads/ApexWall-Bridge.zip"
+                  download="ApexWall-Bridge.zip"
+                  className="px-3 py-1.5 bg-sky-600/90 hover:bg-sky-500 text-white font-medium rounded-lg text-xs transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                  title="Download the standalone Windows bridge to stream live telemetry from your PC rig"
+                >
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>Download Bridge (.exe)</span>
+                </a>
+                <span className="text-slate-700">|</span>
+                <Link
+                  href="/download"
+                  className="text-[11px] text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 transition"
+                >
+                  <span>Get Bridge App</span>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                </Link>
+              </div>
             </div>
           )}
 

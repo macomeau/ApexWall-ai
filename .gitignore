@@ -29,3 +29,8 @@ Thumbs.db
 
 # generated: embedded web assets for the Neon function (rebuilt by neon/deploy.sh)
 neon/api/lib/web-dist.ts
+
+# Node SEA single-executable bridge build artifacts
+sea-prep.blob
+scripts/bridge-bundle.js
+public/downloads/*.exe

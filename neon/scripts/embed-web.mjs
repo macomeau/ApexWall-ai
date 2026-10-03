@@ -19,6 +19,9 @@ const files = {};
 function walk(dir) {
   for (const e of readdirSync(dir)) {
     const p = join(dir, e);
+    // Large bridge binaries are hosted on GitHub Releases, not embedded —
+    // embedding a 34MB zip would 50x the function bundle and break deploys.
+    if (p.includes(`${sep}downloads${sep}`) || p.endsWith(`${sep}downloads`)) continue;
     if (statSync(p).isDirectory()) walk(p);
     else files[relative(dist, p).split(sep).join("/")] = readFileSync(p).toString("base64");
   }

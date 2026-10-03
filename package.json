@@ -1,7 +1,7 @@
 {
   "name": "apexwall",
   "version": "2.0.0",
-  "description": "ApexWall \u2014 Autonomous Sim Racing Telemetry Analytics, Chassis Engineering & Tactical Pit Strategy",
+  "description": "ApexWall — Autonomous Sim Racing Telemetry Analytics, Chassis Engineering & Tactical Pit Strategy",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -9,15 +9,19 @@
     "build": "next build",
     "start": "next start",
     "telemetry-bridge": "node scripts/telemetry-bridge.js",
+    "build:bridge-exe": "esbuild scripts/telemetry-bridge.js --bundle --platform=node --external:@emiliosp/node-iracing-sdk --external:koffi --outfile=scripts/bridge-bundle.js && node --experimental-sea-config sea-config.json && node scripts/build-bridge-exe.cjs",
     "serve:legacy": "node server.js"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev57.0",
+    "@emiliosp/node-iracing-sdk": "^1.4.0",
     "@neondatabase/auth": "^0.5.0-beta",
     "@neondatabase/serverless": "^1.0.2",
     "@types/jszip": "^3.4.0",
+    "@yao-pkg/pkg": "^6.23.0",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
+    "esbuild": "^0.28.2",
     "express": "^4.19.2",
     "jszip": "^3.10.2",
     "lucide-react": "^1.48.0",
@@ -26,8 +30,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.7.0",
-    "ws": "^8.21.3",
-    "@emiliosp/node-iracing-sdk": "^1.4.0"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
