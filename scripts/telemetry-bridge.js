@@ -346,8 +346,17 @@ async function startIracingReader() {
   let sdk;
   try {
     sdk = require("@emiliosp/node-iracing-sdk");
-  } catch {
-    console.warn("[iRacing] @emiliosp/node-iracing-sdk not installed — run: npm install @emiliosp/node-iracing-sdk");
+  } catch (e) {
+    console.warn(`[iRacing] shared memory unavailable: ${e.message}`);
+    // Hint for .exe users: the koffi/ sidecar folder must sit next to the exe
+    try {
+      const path = require("path");
+      const fs = require("fs");
+      const sidecar = path.join(path.dirname(process.execPath), "koffi", "index.js");
+      if (!fs.existsSync(sidecar)) {
+        console.warn(`[iRacing] koffi sidecar not found at ${sidecar} — extract the full zip (exe + koffi folder).`);
+      }
+    } catch {}
     return;
   }
 
