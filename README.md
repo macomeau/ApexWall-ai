@@ -3,7 +3,6 @@
 
 > **Attribution:** This is a personal non-commercial fork for sim rig testing. The ApexWall-ai platform was originally created and architected by **Akshat Yadav ([octavia-23](https://github.com/octavia-23))** — see the [upstream repository](https://github.com/octavia-23/ApexWall-ai). The upstream project is source-available for personal sim racing use, driver training, and technical portfolio review (all rights reserved © 2026); it is not under a permissive open-source license. This fork is ported to the Neon stack (Neon Postgres + Neon Auth + AI Gateway) and is not affiliated with or endorsed by the upstream creator.
 
-[![Live Deployment](https://img.shields.io/badge/Production%20URL-racing.marccomeau.com-10b981?style=for-the-badge&logo=vercel&logoColor=white)](https://racing.marccomeau.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
@@ -11,12 +10,6 @@
 [![Inference Engine](https://img.shields.io/badge/AI%20Inference-Neon%20AI%20Gateway-8A63D2?style=for-the-badge)](https://neon.com/docs/ai/ai-gateway)
 
 **ApexWall AI** is a universal, open race engineering platform and MoTeC telemetry workbench designed for competitive sim racers. Unlike single-sim subscription tools, ApexWall provides universal vehicle dynamics calculations, authentic GPS track mapping, friction circle physics, and real-time AI reasoning across **Assetto Corsa Competizione**, **iRacing**, **F1 23/24**, **Le Mans Ultimate**, and **Automobilista 2**.
-
----
-
-## ⚡ Live Demo
-Experience the platform live in your browser:  
-👉 **[https://racing.marccomeau.com/](https://racing.marccomeau.com/)**
 
 ---
 
