@@ -11,11 +11,10 @@ import {
   Zap,
   ShieldCheck,
   RefreshCw,
-  ExternalLink,
-  Gamepad2
+  ExternalLink
 } from "lucide-react";
 
-type SimTab = "iracing" | "ams2" | "forza" | "f1" | "acc" | "acevo";
+type SimTab = "iracing" | "ams2" | "forza" | "f1" | "acc";
 
 export default function DownloadPage() {
   const [activeTab, setActiveTab] = useState<SimTab>("iracing");
@@ -59,7 +58,6 @@ export default function DownloadPage() {
     { id: "forza", label: "Forza" },
     { id: "f1", label: "F1 25" },
     { id: "acc", label: "ACC" },
-    { id: "acevo", label: "AC EVO" },
   ];
 
   return (
@@ -130,11 +128,7 @@ export default function DownloadPage() {
 
           <p className="text-xs text-slate-500 mt-3 flex items-center justify-center gap-2">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Standalone .exe included — no Node.js install needed for UDP sims.</span>
-          </p>
-          <p className="text-xs text-slate-500 mt-1.5 flex items-center justify-center gap-2">
-            <Gamepad2 className="w-3.5 h-3.5 text-sky-500" />
-            <span>iRacing uses shared memory — run the included script version (<code className="text-amber-300 font-mono">Launch_ApexWall_Bridge.bat</code>) instead.</span>
+            <span>Standalone .exe included — no Node.js install needed. iRacing shared memory supported.</span>
           </p>
         </div>
 
@@ -242,8 +236,7 @@ export default function DownloadPage() {
                 <div className="font-semibold text-sky-400">iRacing (Shared Memory — no in-game toggle needed)</div>
                 <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
                   <li>iRacing exposes telemetry via shared memory automatically — nothing to enable in-game.</li>
-                  <li>Run the <span className="font-mono text-amber-300">script version</span> of the bridge: <span className="font-mono text-amber-300">Launch_ApexWall_Bridge.bat</span> (the .exe is UDP-only).</li>
-                  <li>First run: <span className="font-mono text-emerald-400">npm install ws @emiliosp/node-iracing-sdk</span> in the scripts folder.</li>
+                  <li>Extract the zip and double-click <span className="font-mono text-amber-300">ApexWall-Bridge.exe</span> — iRacing support is built in.</li>
                   <li>Start iRacing and drive — the bridge auto-detects the session and records laps.</li>
                 </ol>
               </div>
@@ -302,18 +295,6 @@ export default function DownloadPage() {
                   <li>ACC natively communicates via UDP port 9000.</li>
                   <li>Ensure the bridge is running on your machine.</li>
                   <li>Drive — laps are captured automatically.</li>
-                </ol>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "acevo" && (
-            <div className="space-y-4 text-xs">
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="font-semibold text-sky-400">Assetto Corsa EVO (Shared Memory)</div>
-                <ol className="list-decimal list-inside space-y-1.5 text-slate-300">
-                  <li>AC EVO exposes telemetry via shared memory — no in-game toggle needed.</li>
-                  <li>Run the bridge and drive — laps are captured automatically.</li>
                 </ol>
               </div>
             </div>

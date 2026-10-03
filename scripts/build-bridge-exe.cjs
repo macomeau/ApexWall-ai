@@ -72,6 +72,23 @@ function download(url, dest) {
   );
   const sizeMB = (fs.statSync(OUT_EXE).size / 1024 / 1024).toFixed(1);
   console.log(`Built ${OUT_EXE} (${sizeMB} MB)`);
+
+  // koffi sidecar for iRacing shared memory (native addon can't live inside the SEA blob).
+  // Layout next to the exe: koffi/index.js + koffi/build/koffi/win32_x64/koffi.node
+  // koffi's own loader resolves the .node via its real __dirname, so we ship the
+  // package's index.js + win32_x64 binary as-is.
+  const koffiPkg = path.join(__dirname, "..", "node_modules", "koffi");
+  const sidecarDir = path.join(path.dirname(OUT_EXE), "koffi");
+  const sidecarBinDir = path.join(sidecarDir, "build", "koffi", "win32_x64");
+  fs.mkdirSync(sidecarBinDir, { recursive: true });
+  for (const f of ["index.js", "package.json"]) {
+    const src = path.join(koffiPkg, f);
+    if (fs.existsSync(src)) fs.copyFileSync(src, path.join(sidecarDir, f));
+  }
+  const nodeBin = path.join(koffiPkg, "build", "koffi", "win32_x64", "koffi.node");
+  if (!fs.existsSync(nodeBin)) throw new Error(`koffi win32_x64 binary not found at ${nodeBin}`);
+  fs.copyFileSync(nodeBin, path.join(sidecarBinDir, "koffi.node"));
+  console.log("koffi sidecar staged at", sidecarDir);
 })().catch((e) => {
   console.error("build-bridge-exe failed:", e.message);
   process.exit(1);

@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start",
     "telemetry-bridge": "node scripts/telemetry-bridge.js",
-    "build:bridge-exe": "esbuild scripts/telemetry-bridge.js --bundle --platform=node --external:@emiliosp/node-iracing-sdk --external:koffi --outfile=scripts/bridge-bundle.js && node --experimental-sea-config sea-config.json && node scripts/build-bridge-exe.cjs",
+    "build:bridge-exe": "esbuild scripts/telemetry-bridge.js --bundle --platform=node --alias:koffi=./scripts/koffi-sidecar.cjs --outfile=scripts/bridge-bundle.js && node --experimental-sea-config sea-config.json && node scripts/build-bridge-exe.cjs",
     "serve:legacy": "node server.js"
   },
   "dependencies": {
