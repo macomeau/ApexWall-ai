@@ -494,10 +494,23 @@ export function parseTelemetryCSVLaps(csvText: string, filename: string = "telem
  */
 export function parseTelemetryCSV(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile {
   const laps = parseTelemetryCSVLaps(csvText, filename);
+  // Pick the fastest COMPLETE lap. A partial lap (pit in/out, off-track) always
+  // has a shorter duration than a full lap, so a naive min-duration pick
+  // selects fragments. Filter to laps covering ~most of the max distance first.
+  const maxDist = Math.max(1, ...laps.map((l) => {
+    const pts = l.points;
+    return pts.length > 1 ? pts[pts.length - 1].dist - pts[0].dist : 0;
+  }));
+  const complete = laps.filter((l) => {
+    const pts = l.points;
+    const d = pts.length > 1 ? pts[pts.length - 1].dist - pts[0].dist : 0;
+    return d >= maxDist * 0.9;
+  });
+  const candidates = complete.length > 0 ? complete : laps;
   let best: ParsedTelemetryFile | null = null;
   let bestDur = Infinity;
   let most: ParsedTelemetryFile | null = null;
-  for (const l of laps) {
+  for (const l of candidates) {
     if (!most || l.rawCount > most.rawCount) most = l;
     const pts = l.points;
     // Downsampling always keeps the first and last raw points, so this is
