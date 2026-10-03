@@ -238,6 +238,17 @@ export function getAuthenticTrackGeometry(trackNameOrHint: string, totalDist?: n
     return REAL_CIRCUITS.barkriver;
   }
 
+  // Known tracks WITHOUT authentic geometry yet: never let the distance
+  // fallback misfire them onto a wrong circuit (e.g. Hermanos Rodriguez
+  // 4304m -> Interlagos 4309m at 0.1%). Return null so the caller uses
+  // dead-reckoning reconstruction instead of a wrong map.
+  if (
+    lower.includes("hermanos") || lower.includes("rodriguez") || lower.includes("rodríguez") ||
+    (lower.includes("mexico") && (lower.includes("city") || lower.includes("gp") || lower.includes("grand prix")))
+  ) {
+    return null;
+  }
+
   // Fallback match by lap distance: return the CLOSEST match within ~3% of official FIA length
   // (not the first match — fixes misfires like Sebring 6019 vs Silverstone 5891 at 2.13%,
   //  Mosport 3957 vs Brands Hatch 3916 at 1.04%, RBR 4318 vs Zandvoort 4259 at 1.37%)
