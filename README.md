@@ -140,4 +140,6 @@ Navigate to `http://localhost:3000` in your browser.
 ---
 
 ## 📄 License
-This project is source-available for personal sim racing use, driver training, and technical portfolio review. All rights reserved © 2026.
+Copyright © 2026 [Akshat Yadav (octavia-23)](https://github.com/octavia-23). All rights reserved.
+
+This is a personal non-commercial fork of the [upstream ApexWall-ai project](https://github.com/octavia-23/ApexWall-ai), which is source-available for personal sim racing use, driver training, and technical portfolio review — not under a permissive open-source license. See [LICENSE](./LICENSE) for the full notice.
