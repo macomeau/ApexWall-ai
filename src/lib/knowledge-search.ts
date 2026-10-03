@@ -25,6 +25,34 @@ export interface KnowledgeHit {
   score: number;
 }
 
+const EMBEDDING_MODEL = "qwen3-embedding-0-6b";
+
+/**
+ * Generate a query embedding via Neon AI Gateway (1024-dim).
+ * Returns null if the gateway isn't configured — callers fall back to text search.
+ */
+export async function getQueryEmbedding(text: string): Promise<number[] | null> {
+  const token = process.env.NEON_AI_GATEWAY_TOKEN || "";
+  const base = (process.env.NEON_AI_GATEWAY_BASE_URL || "").replace(/\/$/, "");
+  if (!token || !base || !text.trim()) return null;
+  try {
+    const res = await fetch(`${base}/v1/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ model: EMBEDDING_MODEL, input: text.slice(0, 2000) }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const emb = data?.data?.[0]?.embedding;
+    return Array.isArray(emb) && emb.length === 1024 ? emb : null;
+  } catch {
+    return null;
+  }
+}
+
 // Idempotent DDL — ensures the knowledge base exists. Runs on first search.
 // Uses pgvector (Neon) / lakebase_vector (Lakebase) patterns; falls back
 // gracefully if the vector extension is unavailable (text search still works).
@@ -43,13 +71,17 @@ export async function ensureKnowledgeBase(): Promise<void> {
       body TEXT NOT NULL,
       category TEXT NOT NULL DEFAULT 'general',
       tags TEXT[] NOT NULL DEFAULT '{}',
-      embedding vector(1536),
+      embedding vector(1024),
       search_vector tsvector GENERATED ALWAYS AS (
         setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
         setweight(to_tsvector('english', coalesce(body, '')), 'B')
       ) STORED,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_setup_knowledge_title_unique
+    ON public.setup_knowledge (title)
   `;
   await sql`
     CREATE INDEX IF NOT EXISTS idx_setup_knowledge_search
@@ -77,11 +109,12 @@ export async function ensureKnowledgeBase(): Promise<void> {
  */
 export async function seedKnowledgeBase(): Promise<number> {
   await ensureKnowledgeBase();
-  await sql`DELETE FROM public.setup_knowledge`;
+  // Idempotent: never wipes existing rows (preserves embeddings).
   for (const entry of SETUP_KNOWLEDGE) {
     await sql`
       INSERT INTO public.setup_knowledge (title, body, category, tags)
       VALUES (${entry.title}, ${entry.body}, ${entry.category}, ${entry.tags})
+      ON CONFLICT (title) DO NOTHING
     `;
   }
   return SETUP_KNOWLEDGE.length;
@@ -167,6 +200,8 @@ export async function searchSetupKnowledge(
 /**
  * Build a retrieval-augmented context block for the AI prompt.
  * Called with the driver's complaint + detected handling issues.
+ * Auto-generates the query embedding via AI Gateway when not provided,
+ * so the vector half of the hybrid search actually runs.
  */
 export async function getKnowledgeContext(
   queryParts: string[],
@@ -175,6 +210,10 @@ export async function getKnowledgeContext(
 ): Promise<string> {
   const query = queryParts.filter(Boolean).join(" ").slice(0, 500);
   if (!query.trim()) return "";
+
+  if (!embedding) {
+    embedding = await getQueryEmbedding(query);
+  }
 
   const hits = await searchSetupKnowledge(query, embedding, limit);
   if (hits.length === 0) return "";
