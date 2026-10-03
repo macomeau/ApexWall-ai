@@ -1,0 +1,23 @@
+ApexWall-ai — License Notice
+
+Copyright © 2026 Akshat Yadav (octavia-23). All rights reserved.
+
+This repository (macomeau/ApexWall-ai) is a personal non-commercial fork of the
+upstream project at https://github.com/octavia-23/ApexWall-ai, which is
+source-available under the following terms (per the upstream README.md):
+
+  "This project is source-available for personal sim racing use, driver
+   training, and technical portfolio review. All rights reserved © 2026."
+
+The upstream project is NOT licensed under a permissive open-source license.
+It does not grant rights for uncredited public re-hosting, third-party
+distribution under a separate identity, or commercial / derivative SaaS
+deployment.
+
+This fork's modifications (Neon Postgres + Neon Auth + AI Gateway port,
+telemetry bridge, analysis features) are made solely for the fork maintainer's
+personal sim rig use and are subject to the same upstream terms. No additional
+rights are granted beyond those in the upstream source-available scope.
+
+Original creator: Akshat Yadav — https://github.com/octavia-23
+Upstream repository: https://github.com/octavia-23/ApexWall-ai
