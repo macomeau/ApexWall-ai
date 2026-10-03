@@ -76,6 +76,15 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
               <span className="text-[10px] font-semibold text-blue-400 px-1.5 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
                 PRO
               </span>
+              <a
+                href="https://github.com/octavia-23/ApexWall-ai"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden sm:inline text-[10px] text-slate-500 hover:text-slate-300 transition ml-1"
+                title="Platform originally created by Akshat Yadav (octavia-23)"
+              >
+                by octavia-23
+              </a>
             </div>
           </div>
 

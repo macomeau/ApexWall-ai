@@ -303,8 +303,20 @@ export default function DownloadPage() {
       </main>
 
       {/* Footer */}
-      <footer className="h-12 border-t border-white/[0.08] flex items-center justify-between px-6 text-xs text-slate-500 font-mono">
-        <div>ApexWall AI • Motorsport Engineering &amp; Telemetry Hub</div>
+      <footer className="h-auto min-h-12 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-2 px-6 py-3 text-xs text-slate-500 font-mono">
+        <div className="text-center sm:text-left">
+          <div>ApexWall AI • Motorsport Engineering &amp; Telemetry Hub</div>
+          <div className="mt-1 text-[11px]">
+            Platform originally created and architected by{" "}
+            <a href="https://github.com/octavia-23" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+              Akshat Yadav (octavia-23)
+            </a>{" "}
+            — personal non-commercial fork.{" "}
+            <a href="https://github.com/octavia-23/ApexWall-ai" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline">
+              Upstream repository
+            </a>
+          </div>
+        </div>
         <div className="flex items-center gap-4">
           <Link href="/" className="hover:text-slate-300 transition">Telemetry</Link>
           <a href="https://github.com/macomeau/ApexWall-ai/raw/main/public/downloads/ApexWall-Bridge.zip" download="ApexWall-Bridge.zip" className="text-blue-400 hover:text-blue-300 transition">Download (.zip)</a>
