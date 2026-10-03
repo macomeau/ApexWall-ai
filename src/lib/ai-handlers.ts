@@ -6,6 +6,7 @@
  * Only relative imports here: the function bundler has no "@/ " alias.
  */
 import { callAIWithFallback, callAIChatText } from "./ai";
+import { getKnowledgeContext } from "./knowledge-search";
 import { getGameSetupProfile } from "./game-setup-profiles";
 import { getAuthoritativeCatalog } from "./setup-engine/parameter-catalog";
 import { validateAndRepairSetup, emptyBaselineContext } from "./setup-engine/validator";
@@ -153,9 +154,22 @@ Rules:
 - Never use generic placeholder templates.
 - Keep all parameter items concrete and numeric as they appear in the game.`;
 
+  // RAG: ground the setup in retrieved engineering knowledge.
+  let kbContext = "";
+  try {
+    kbContext = await getKnowledgeContext(
+      [handlingIssue || "", driverStyle || "", `${car} ${track} ${sessionType || ""}`],
+      null,
+      3
+    );
+  } catch (kbErr) {
+    console.warn("[knowledge] retrieval failed:", (kbErr as any)?.message);
+  }
+  const kbSystemPrompt = kbContext ? systemPrompt + "\n" + kbContext : systemPrompt;
+
   try {
     const setup = await callAIWithFallback([
-      { role: "system", content: systemPrompt },
+      { role: "system", content: kbSystemPrompt },
       { role: "user", content: userBrief },
     ], 2200, 0.4);
 
@@ -626,10 +640,30 @@ Output ONLY valid JSON matching this schema:
   "pitRadioMessage": "Radio message from Chief Race Engineer to driver."
 }`;
 
+    // RAG: retrieve relevant setup knowledge based on driver complaint +
+    // detected handling issues, inject into the prompt for grounded advice.
+    // Embeddings are optional (null = text-only search); the table works either way.
+    let knowledgeContext = "";
+    try {
+      const issueParts = [
+        driverComplaint || "",
+        summaryMetrics?.phaseBalance?.verdict || "",
+        ...(summaryMetrics?.driverVsCar?.mechanicalSetupPoints || []),
+        `${car} ${track}`,
+      ];
+      knowledgeContext = await getKnowledgeContext(issueParts, null, 3);
+    } catch (kbErr) {
+      // Knowledge base is best-effort; never block the analysis.
+      console.warn("[knowledge] retrieval failed:", (kbErr as any)?.message);
+    }
+    const augmentedSystemPrompt = knowledgeContext
+      ? systemPrompt + "\n" + knowledgeContext
+      : systemPrompt;
+
     try {
       const analysis = await callAIWithFallback(
         [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: augmentedSystemPrompt },
           { role: "user", content: telemetryReport },
         ],
         1800,
