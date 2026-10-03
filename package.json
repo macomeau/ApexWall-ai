@@ -26,7 +26,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^3.7.0",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "@emiliosp/node-iracing-sdk": "^1.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
