@@ -449,12 +449,19 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     // Auto-learn unknown circuits: persist the reconstructed geometry so the
     // next analysis of this track is recognized with corner names. Silent,
     // best-effort, and idempotent per (file, track).
+    // Guard: never learn a partial lap. If the dead-reckoning drift is large
+    // relative to lap distance, the trajectory wasn't a closed circuit —
+    // learning it would poison future analyses with a fragment geometry.
     try {
       if (trackMapData && trackMapData.geometrySource === "reconstructed") {
         const hint = `${track || ""} ${parsed.filename || ""}`;
         const endDist = parsed.points[parsed.points.length - 1]?.dist;
         const saveKey = `${parsed.filename}::${normalizeTrackKey(track)}`;
+        const closureRatio =
+          endDist > 0 ? (trackMapData.closureErrorM ?? 0) / endDist : 1;
+        const looksLikeFullLap = closureRatio < 0.25 && (endDist ?? 0) > 800;
         if (
+          looksLikeFullLap &&
           !learnedSaveKeys.current.has(saveKey) &&
           !matchLearnedTrackMeta(hint, endDist, learnedTracks)
         ) {

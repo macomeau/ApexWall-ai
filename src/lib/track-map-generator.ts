@@ -194,14 +194,18 @@ function reconstructAutonomousTrajectory(telemetry: ParsedTelemetryFile): { x: n
   const totalDist = Math.max(1, pts[pts.length - 1].dist);
   const driftX = x;
   const driftY = y;
+  const closureErrorM = Math.sqrt(driftX * driftX + driftY * driftY);
 
-  return rawTrajectory.map((pt) => {
+  const corrected = rawTrajectory.map((pt) => {
     const progress = Math.max(0, Math.min(1, pt.dist / totalDist));
     return {
       x: pt.x - progress * driftX,
       y: pt.y - progress * driftY,
     };
   });
+  // Attach the raw drift so callers can judge whether this was a closed loop.
+  (corrected as any).closureErrorM = closureErrorM;
+  return corrected;
 }
 
 /**
@@ -436,5 +440,6 @@ export function generateTrackMapData(
     corners,
     bounds: { minX: 0, maxX: 1000, minY: 0, maxY: 1000 },
     geometrySource: "reconstructed",
+    closureErrorM: (rawPositions as any).closureErrorM ?? 0,
   };
 }

@@ -298,5 +298,11 @@ export interface TrackMapData {
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
   /** Where the circuit geometry came from: built-in DB, user-learned, or anonymous reconstruction. */
   geometrySource?: "authentic" | "learned" | "reconstructed";
+  /**
+   * For reconstructed geometry: the dead-reckoning drift magnitude in meters
+   * (distance between raw trajectory end and start before force-closing the loop).
+   * Large values indicate a partial lap, not a complete circuit.
+   */
+  closureErrorM?: number;
 }
 
