@@ -1,7 +1,7 @@
 # ApexWall AI 🏁
 ### Autonomous Sim Racing Telemetry Analytics, Chassis Engineering & Tactical Pit Strategy
 
-[![Live Deployment](https://img.shields.io/badge/Production%20URL-pitwall--ai--one.vercel.app-10b981?style=for-the-badge&logo=vercel&logoColor=white)](https://pitwall-ai-one.vercel.app/)
+[![Live Deployment](https://img.shields.io/badge/Production%20URL-racing.marccomeau.com-10b981?style=for-the-badge&logo=vercel&logoColor=white)](https://racing.marccomeau.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
@@ -14,7 +14,7 @@
 
 ## ⚡ Live Demo
 Experience the platform live in your browser:  
-👉 **[https://pitwall-ai-one.vercel.app/](https://pitwall-ai-one.vercel.app/)**
+👉 **[https://racing.marccomeau.com/](https://racing.marccomeau.com/)**
 
 ---
 
@@ -112,8 +112,8 @@ apexwall/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/octavia-23/pitwall-ai.git
-cd pitwall-ai
+git clone https://github.com/macomeau/ApexWall-ai.git
+cd ApexWall-ai
 ```
 
 ### 2. Install Dependencies
