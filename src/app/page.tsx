@@ -12,6 +12,7 @@ import { AuthModal } from "@/components/auth/AuthModal";
 import { Footer } from "@/components/Footer";
 import { SavedSetupRecord, getSavedSetups } from "@/lib/setup-vault";
 import { RaceEngineerChat } from "@/components/engineer/RaceEngineerChat";
+import { SessionHistory } from "@/components/history/SessionHistory";
 import { SetupExportContext } from "@/lib/setup-exporter";
 import { TelemetryAnalysisResult, ParsedTelemetryFile } from "@/types/telemetry";
 import { SessionProvider, useSession } from "@/components/session/SessionContext";
@@ -175,6 +176,10 @@ function HomeInner() {
 
           <div style={{ display: mode === "live" ? "block" : "none" }}>
             <LiveTelemetryHUD />
+          </div>
+
+          <div style={{ display: mode === "history" ? "block" : "none" }}>
+            <SessionHistory />
           </div>
         </main>
       </div>

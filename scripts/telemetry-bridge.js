@@ -60,6 +60,71 @@ let lapStartTime = Date.now();
 let lastLapDistance = 0;
 let lastLapNumber = -1;
 
+// F-006: Cloud auto-upload config (set via env vars)
+const CLOUD_API_URL = (process.env.APEXWALL_API_URL || "").replace(/\/$/, "");
+const CLOUD_BRIDGE_KEY = process.env.APEXWALL_BRIDGE_KEY || "";
+let cloudSessionId = null;
+let cloudSessionKey = ""; // game|car|track — new session when this changes
+
+/**
+ * Upload a completed lap to the cloud ingest API.
+ * Downsamples to 30Hz to stay under the function payload limit.
+ */
+async function uploadLapToCloud(lap) {
+  if (!CLOUD_API_URL || !CLOUD_BRIDGE_KEY) return;
+  try {
+    const sessionKey = `${lap.game}`;
+    if (cloudSessionId == null || cloudSessionKey !== sessionKey) {
+      const r = await fetch(`${CLOUD_API_URL}/api/sessions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Bridge-Key": CLOUD_BRIDGE_KEY,
+        },
+        body: JSON.stringify({ game: lap.game, source: "bridge" }),
+      });
+      if (!r.ok) throw new Error(`session create: ${r.status}`);
+      const data = await r.json();
+      cloudSessionId = data.session_id;
+      cloudSessionKey = sessionKey;
+      console.log(`[CLOUD] New session ${cloudSessionId} for ${lap.game}`);
+    }
+
+    // Downsample to 30Hz: keep every 2nd point (bridge runs at ~60Hz)
+    const pts = lap.points.filter((_, i) => i % 2 === 0);
+    const channels = {
+      speed: pts.map((p) => p.speed ?? 0),
+      throttle: pts.map((p) => p.throttle ?? 0),
+      brake: pts.map((p) => p.brake ?? 0),
+      steer: pts.map((p) => p.steer ?? 0),
+      gear: pts.map((p) => p.gear ?? 0),
+      rpm: pts.map((p) => p.rpm ?? 0),
+      lat_g: pts.map((p) => p.latG ?? 0),
+      long_g: pts.map((p) => p.longG ?? 0),
+      dist: pts.map((p) => p.dist ?? 0),
+    };
+    const r = await fetch(`${CLOUD_API_URL}/api/sessions/${cloudSessionId}/laps`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Bridge-Key": CLOUD_BRIDGE_KEY,
+      },
+      body: JSON.stringify({
+        lap_number: lapCounter,
+        lap_time: parseFloat(lap.lapTime),
+        is_valid: true,
+        channels,
+        sample_rate: 30,
+        sample_count: pts.length,
+      }),
+    });
+    if (!r.ok) throw new Error(`lap upload: ${r.status}`);
+    console.log(`[CLOUD] Uploaded lap ${lapCounter} (${pts.length} pts @30Hz)`);
+  } catch (e) {
+    console.warn(`[CLOUD] Upload failed: ${e.message}`);
+  }
+}
+
 console.log("=================================================================");
 console.log("  APEXWALL AI // SIM RIG TELEMETRY BRIDGE");
 console.log("=================================================================");
@@ -221,6 +286,8 @@ function broadcastFrame(frame) {
       lapCounter++;
       lastCompletedLap = { game: activeGame, lapTime: elapsedSec.toFixed(2), points: [...activeLapBuffer] };
       console.log(`[LAP] Lap ${lapCounter} complete (${elapsedSec.toFixed(2)}s, ${lastCompletedLap.points.length} pts)`);
+      // F-006: auto-upload to cloud (fire and forget)
+      uploadLapToCloud(lastCompletedLap).catch(() => {});
       activeLapBuffer = [];
       lapStartTime = Date.now();
       const msg = JSON.stringify({

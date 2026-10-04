@@ -342,6 +342,167 @@ app.get("/api/health", (c) =>
   c.json({ ok: true, time: new Date().toISOString() })
 );
 
+// ---------- lap telemetry ingest (P-006) ----------
+// Chunked lap-by-lap upload: each lap POST stays under the function payload
+// limit. Client downsamples to <=30Hz before upload.
+import { sql } from "../../src/lib/db";
+
+/**
+ * Auth for ingest endpoints: session cookie OR bridge API key.
+ * Bridge key is pre-shared (BRIDGE_API_KEY) and maps to BRIDGE_USER_ID.
+ * Both set via `neon functions deploy --env` — personal deployment only.
+ */
+async function getIngestUserId(c: any): Promise<string | null> {
+  const bridgeKey = c.req.headers.get("x-bridge-key");
+  if (
+    bridgeKey &&
+    process.env.BRIDGE_API_KEY &&
+    process.env.BRIDGE_USER_ID &&
+    bridgeKey === process.env.BRIDGE_API_KEY
+  ) {
+    return process.env.BRIDGE_USER_ID;
+  }
+  return getSessionUserId(c);
+}
+
+app.post("/api/sessions", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const body = await c.req.json().catch(() => null);
+  if (!body) return c.json({ error: "Invalid JSON" }, 400);
+  const id = `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await sql`
+    INSERT INTO sessions (id, user_id, game, car, track, source)
+    VALUES (${id}, ${userId}, ${body.game ?? null}, ${body.car ?? null}, ${body.track ?? null}, ${body.source ?? "upload"})
+  `;
+  return c.json({ session_id: id });
+});
+
+app.get("/api/sessions", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const rows = await sql`
+    SELECT id, game, car, track, started_at, ended_at, lap_count, best_lap_time, source
+    FROM sessions WHERE user_id = ${userId} ORDER BY started_at DESC LIMIT 50
+  `;
+  return c.json({ sessions: rows });
+});
+
+app.get("/api/sessions/:id", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const sid = c.req.param("id");
+  const sess = (await sql`SELECT * FROM sessions WHERE id = ${sid} AND user_id = ${userId}`) as any[];
+  if (sess.length === 0) return c.json({ error: "Not found" }, 404);
+  const laps = await sql`
+    SELECT lap_number, lap_time, is_valid, is_out_lap, is_in_lap,
+           sector_times, sector_valid, sample_rate, sample_count
+    FROM lap_telemetry WHERE session_id = ${sid} ORDER BY lap_number
+  `;
+  return c.json({ session: sess[0], laps });
+});
+
+app.post("/api/sessions/:id/laps", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const sid = c.req.param("id");
+  const sess = (await sql`SELECT id FROM sessions WHERE id = ${sid} AND user_id = ${userId}`) as any[];
+  if (sess.length === 0) return c.json({ error: "Session not found" }, 404);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body.lap_number !== "number") return c.json({ error: "Invalid lap payload" }, 400);
+  const ch = body.channels ?? {};
+  const arr = (v: any) => (Array.isArray(v) ? v : null);
+  await sql`
+    INSERT INTO lap_telemetry
+      (session_id, user_id, lap_number, lap_time, is_valid, is_out_lap, is_in_lap,
+       sector_times, sector_valid, ch_speed, ch_throttle, ch_brake, ch_steer, ch_gear,
+       ch_rpm, ch_lat_g, ch_long_g, ch_dist, sample_rate, sample_count, extra_channels)
+    VALUES
+      (${sid}, ${userId}, ${body.lap_number}, ${body.lap_time ?? null},
+       ${body.is_valid ?? true}, ${body.is_out_lap ?? false}, ${body.is_in_lap ?? false},
+       ${body.sector_times ?? null}, ${body.sector_valid ?? null},
+       ${arr(ch.speed)}, ${arr(ch.throttle)}, ${arr(ch.brake)}, ${arr(ch.steer)}, ${arr(ch.gear)},
+       ${arr(ch.rpm)}, ${arr(ch.lat_g)}, ${arr(ch.long_g)}, ${arr(ch.dist)},
+       ${body.sample_rate ?? null}, ${body.sample_count ?? null},
+       ${JSON.stringify(body.extra_channels ?? {})})
+    ON CONFLICT (session_id, lap_number) DO UPDATE SET
+      lap_time = EXCLUDED.lap_time, is_valid = EXCLUDED.is_valid,
+      sector_times = EXCLUDED.sector_times, ch_speed = EXCLUDED.ch_speed,
+      ch_throttle = EXCLUDED.ch_throttle, ch_brake = EXCLUDED.ch_brake,
+      ch_steer = EXCLUDED.ch_steer, ch_gear = EXCLUDED.ch_gear,
+      ch_rpm = EXCLUDED.ch_rpm, ch_lat_g = EXCLUDED.ch_lat_g,
+      ch_long_g = EXCLUDED.ch_long_g, ch_dist = EXCLUDED.ch_dist
+  `;
+  // Update session aggregates
+  await sql`
+    UPDATE sessions SET
+      lap_count = (SELECT COUNT(*) FROM lap_telemetry WHERE session_id = ${sid}),
+      best_lap_time = (SELECT MIN(lap_time) FROM lap_telemetry WHERE session_id = ${sid} AND is_valid AND lap_time IS NOT NULL),
+      ended_at = now()
+    WHERE id = ${sid}
+  `;
+  return c.json({ ok: true });
+});
+
+import { computeDelta, theoreticalBest } from "../../src/lib/delta";
+
+// F-001: Delta trace between two laps (server-side computation)
+app.get("/api/sessions/:id/delta", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const sid = c.req.param("id");
+  const refLap = parseInt(c.req.query("ref") ?? "", 10);
+  const cmpLap = parseInt(c.req.query("cmp") ?? "", 10);
+  if (!Number.isFinite(refLap) || !Number.isFinite(cmpLap)) {
+    return c.json({ error: "ref and cmp lap numbers required" }, 400);
+  }
+  const rows = (await sql`
+    SELECT lap_number, ch_speed, ch_dist FROM lap_telemetry
+    WHERE session_id = ${sid} AND lap_number IN (${refLap}, ${cmpLap}) AND user_id = ${userId}
+  `) as any[];
+  const ref = rows.find((r) => r.lap_number === refLap);
+  const cmp = rows.find((r) => r.lap_number === cmpLap);
+  if (!ref || !cmp || !ref.ch_speed || !cmp.ch_speed) {
+    return c.json({ error: "Laps not found or missing channel data" }, 404);
+  }
+  const result = computeDelta(
+    { dist: ref.ch_dist, speed: ref.ch_speed },
+    { dist: cmp.ch_dist, speed: cmp.ch_speed }
+  );
+  if (!result) return c.json({ error: "Could not compute delta" }, 422);
+  return c.json({ refLap, cmpLap, ...result });
+});
+
+// F-003: Theoretical best from sectors
+app.get("/api/sessions/:id/theoretical-best", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const sid = c.req.param("id");
+  const sess = (await sql`SELECT id FROM sessions WHERE id = ${sid} AND user_id = ${userId}`) as any[];
+  if (sess.length === 0) return c.json({ error: "Not found" }, 404);
+  const laps = (await sql`
+    SELECT lap_number, sector_times, is_valid FROM lap_telemetry
+    WHERE session_id = ${sid} ORDER BY lap_number
+  `) as any[];
+  const result = theoreticalBest(laps);
+  if (!result) return c.json({ error: "No valid sector data" }, 422);
+  return c.json(result);
+});
+
+app.get("/api/sessions/:id/laps/:lap", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const sid = c.req.param("id");
+  const lapNum = parseInt(c.req.param("lap"), 10);
+  const rows = (await sql`
+    SELECT * FROM lap_telemetry
+    WHERE session_id = ${sid} AND lap_number = ${lapNum} AND user_id = ${userId}
+  `) as any[];
+  if (rows.length === 0) return c.json({ error: "Not found" }, 404);
+  return c.json({ lap: rows[0] });
+});
+
 // One-time admin: seed the RAG knowledge base. Requires auth.
 app.post("/api/admin/seed-knowledge", async (c) => {
   const userId = await getSessionUserId(c);
