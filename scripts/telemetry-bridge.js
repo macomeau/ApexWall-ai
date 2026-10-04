@@ -7,9 +7,10 @@
  *
  * Supported Sims (auto-detect):
  *   - iRacing                  : Shared Memory (via @emiliosp/node-iracing-sdk)
+ *   - Assetto Corsa Competizione: Shared Memory (Python bridge)
  *   - Automobilista 2 / pCARS2 : UDP Port 5606
  *   - Forza Motorsport/Horizon : UDP Port 5300 ("Data Out")
- *   - F1 23 / 24 / 25          : UDP Port 20777
+ *   - F1 22 / 23 / 24 / 25     : UDP Port 20777
  *
  * The ApexWall Telemetry tab polls http://localhost:9001/api/status and shows
  * a "Live Rig" banner when this bridge is running. Click "Import Live Lap"
@@ -68,9 +69,10 @@ if (isTestMode) {
   console.log(`  Mode: ${gameFilter ? `Dedicated [${gameFilter.toUpperCase()}]` : "Auto-Detect (all sims)"}`);
   console.log("  Listening:");
   if (!gameFilter || gameFilter === "iracing") console.log("    - iRacing                  : Shared Memory");
+  if (!gameFilter || gameFilter === "acc") console.log("    - Assetto Corsa Competizione: Shared Memory (Python bridge)");
   if (!gameFilter || ["ams2", "automobilista", "pcars2"].includes(gameFilter)) console.log(`    - Automobilista 2 / pCARS2 : UDP ${PORTS.AMS2}`);
   if (!gameFilter || gameFilter === "forza") console.log(`    - Forza Motorsport/Horizon : UDP ${PORTS.FORZA}`);
-  if (!gameFilter || gameFilter === "f1") console.log(`    - F1 23 / 24 / 25          : UDP ${PORTS.F1}`);
+  if (!gameFilter || gameFilter === "f1") console.log(`    - F1 22 / 23 / 24 / 25     : UDP ${PORTS.F1}`);
 }
 console.log(`  HTTP API  : http://localhost:${WS_PORT}/api/status`);
 console.log(`  Lap ingest: http://localhost:${WS_PORT}/api/latest-lap.csv`);
@@ -317,17 +319,57 @@ function parseForzaPacket(msg) {
   };
 }
 
+// F1 22 / 23 / 24 / 25 (Port 20777, Packet 6: Car Telemetry)
 function parseF1Packet(msg) {
-  if (msg.length < 60) return null;
-  const gear = msg.readInt8(43);
+  if (!msg || msg.length < 24) return null;
+
+  const packetFormat = msg.readUInt16LE(0);
+  let headerSize;
+  let packetId;
+  let playerCarIndex;
+
+  if (packetFormat >= 2023) {
+    if (msg.length < 29) return null;
+    headerSize = 29;
+    packetId = msg.readUInt8(6);
+    playerCarIndex = msg.readUInt8(27);
+  } else if (packetFormat === 2022) {
+    if (msg.length < 24) return null;
+    headerSize = 24;
+    packetId = msg.readUInt8(5);
+    playerCarIndex = msg.readUInt8(22);
+  } else {
+    return null;
+  }
+
+  // Validate packetId == 6 (CarTelemetry)
+  if (packetId !== 6) return null;
+  if (playerCarIndex < 0 || playerCarIndex >= 22) return null;
+
+  const recordStride = 60;
+  const recordOffset = headerSize + playerCarIndex * recordStride;
+  if (msg.length < recordOffset + recordStride) return null;
+
+  const speed = msg.readUInt16LE(recordOffset + 0);
+  const throttleRaw = msg.readFloatLE(recordOffset + 2);
+  const steerRaw = msg.readFloatLE(recordOffset + 6);
+  const brakeRaw = msg.readFloatLE(recordOffset + 10);
+  const gear = msg.readInt8(recordOffset + 15);
+  const engineRPM = msg.readUInt16LE(recordOffset + 16);
+
+  const throttle = Math.min(100, Math.max(0, Math.round(throttleRaw * 100)));
+  const brake = Math.min(100, Math.max(0, Math.round(brakeRaw * 100)));
+  const steer = Math.round(steerRaw * 100);
+
   return {
-    game: "F1 24",
-    speed: msg.readUInt16LE(28),
-    rpm: msg.readUInt16LE(44),
+    game: packetFormat === 2022 ? "F1 22" : packetFormat === 2023 ? "F1 23" : "F1 24",
+    speed,
+    rpm: engineRPM,
+    maxRpm: 15000,
     gear: gear === 0 ? 0 : gear === -1 ? -1 : gear,
-    throttle: Math.round(msg.readFloatLE(30) * 100),
-    brake: Math.round(msg.readFloatLE(38) * 100),
-    steer: Math.round(msg.readFloatLE(34) * 100),
+    throttle,
+    brake,
+    steer,
     latG: 0,
     longG: 0,
     lapDistance: 0,
@@ -466,5 +508,40 @@ if (isTestMode) {
   if (want("ams2") || want("automobilista") || want("pcars2"))
     startUDPListener("Automobilista 2", PORTS.AMS2, parseAMS2Packet);
   if (want("forza")) startUDPListener("Forza", PORTS.FORZA, parseForzaPacket);
-  if (want("f1")) startUDPListener("F1 23/24/25", PORTS.F1, parseF1Packet);
+  if (want("f1")) startUDPListener("F1 22/23/24/25", PORTS.F1, parseF1Packet);
+
+  // Assetto Corsa Competizione — Python shared-memory bridge (spawns acc-bridge.py)
+  if (want("acc") || want("assetto-corsa-competizione")) {
+    console.log("[ACC] Launching Assetto Corsa Competizione Shared Memory Bridge...");
+    const path = require("path");
+    const fs = require("fs");
+    const { spawn } = require("child_process");
+    const readline = require("readline");
+    const scriptPath = (() => {
+      // When running as a SEA exe, __dirname is inside the blob — look next to the exe.
+      const candidates = [
+        path.join(path.dirname(process.execPath), "acc-bridge.py"),
+        path.join(__dirname, "acc-bridge.py"),
+        path.join(__dirname, "..", "scripts", "acc-bridge.py"),
+      ];
+      return candidates.find((p) => fs.existsSync(p)) || candidates[0];
+    })();
+    if (fs.existsSync(scriptPath)) {
+      const pyProcess = spawn("python", [scriptPath], { stdio: ["ignore", "pipe", "inherit"] });
+      const rl = readline.createInterface({ input: pyProcess.stdout });
+      rl.on("line", (line) => {
+        try {
+          if (!line.trim()) return;
+          const frame = JSON.parse(line.trim());
+          activeGame = "Assetto Corsa Competizione";
+          broadcastFrame(frame);
+        } catch (_e) {}
+      });
+      pyProcess.on("error", (e) => {
+        console.warn(`[ACC] Python bridge failed to start: ${e.message} (is Python installed?)`);
+      });
+    } else {
+      console.warn(`[ACC] acc-bridge.py not found at ${scriptPath}`);
+    }
+  }
 }
