@@ -65,6 +65,8 @@ const CLOUD_API_URL = (process.env.APEXWALL_API_URL || "").replace(/\/$/, "");
 const CLOUD_BRIDGE_KEY = process.env.APEXWALL_BRIDGE_KEY || "";
 let cloudSessionId = null;
 let cloudSessionKey = ""; // game|car|track — new session when this changes
+let cloudCarName = "";
+let cloudTrackName = "";
 
 /**
  * Upload a completed lap to the cloud ingest API.
@@ -73,7 +75,7 @@ let cloudSessionKey = ""; // game|car|track — new session when this changes
 async function uploadLapToCloud(lap) {
   if (!CLOUD_API_URL || !CLOUD_BRIDGE_KEY) return;
   try {
-    const sessionKey = `${lap.game}`;
+    const sessionKey = `${lap.game}|${cloudCarName}|${cloudTrackName}`;
     if (cloudSessionId == null || cloudSessionKey !== sessionKey) {
       const r = await fetch(`${CLOUD_API_URL}/api/sessions`, {
         method: "POST",
@@ -81,7 +83,12 @@ async function uploadLapToCloud(lap) {
           "Content-Type": "application/json",
           "X-Bridge-Key": CLOUD_BRIDGE_KEY,
         },
-        body: JSON.stringify({ game: lap.game, source: "bridge" }),
+        body: JSON.stringify({
+          game: lap.game,
+          car: cloudCarName || undefined,
+          track: cloudTrackName || undefined,
+          source: "bridge",
+        }),
       });
       if (!r.ok) throw new Error(`session create: ${r.status}`);
       const data = await r.json();
@@ -471,6 +478,39 @@ async function startIracingReader() {
 
   const { IRSDK, VARS } = sdk;
   let ir = null;
+  let pollCount = 0;
+  let lastCarName = "";
+  let lastTrackName = "";
+
+  // Check session info for car/track changes (every ~5s, not every frame)
+  const checkSessionInfo = () => {
+    try {
+      const weekend = ir.getSessionInfo("WeekendInfo");
+      const driverInfo = ir.getSessionInfo("DriverInfo");
+      const track = weekend?.TrackDisplayName || "";
+      let car = "";
+      if (driverInfo?.Drivers && typeof driverInfo.DriverCarIdx === "number") {
+        car = driverInfo.Drivers[driverInfo.DriverCarIdx]?.CarScreenName || "";
+      }
+      if ((track && track !== lastTrackName) || (car && car !== lastCarName)) {
+        if (lastTrackName || lastCarName) {
+          console.log(`[iRacing] Car/track changed: ${car || "?"} @ ${track || "?"}`);
+        } else {
+          console.log(`[iRacing] ${car || "?"} @ ${track || "?"}`);
+        }
+        lastCarName = car;
+        lastTrackName = track;
+        // Reset cloud session so laps go to a new session
+        cloudSessionId = null;
+        cloudCarName = car;
+        cloudTrackName = track;
+        // Update activeGame label with car/track
+        if (car || track) {
+          activeGame = `iRacing - ${car}${track ? ` @ ${track}` : ""}`;
+        }
+      }
+    } catch {}
+  };
 
   const poll = async () => {
     try {
@@ -480,6 +520,9 @@ async function startIracingReader() {
       }
       ir.refreshSharedMemory();
       const g = (v) => { const a = ir.get(v); return a && a.length ? a[0] : 0; };
+
+      // Session info check every ~5s (300 polls at 60Hz)
+      if (++pollCount % 300 === 0) checkSessionInfo();
 
       const speedMs = g(VARS.SPEED);
       if (speedMs < 1 && !iracingActive) { setTimeout(poll, 1000); return; }
