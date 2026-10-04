@@ -23,6 +23,19 @@ import {
   snapToRoster,
   splitIracingFilename,
 } from "@/lib/iracing-content";
+import { MARCS_CARS, MARCS_TRACKS } from "@/lib/marcs-garage";
+
+// Marc's owned content first, then the rest of the roster.
+const MARC_CAR_NAMES = new Set(MARCS_CARS.map((c) => c.display));
+const MARC_TRACK_CONFIGS = new Set(MARCS_TRACKS.flatMap((t) => t.configs));
+const SORTED_IRACING_CARS = [
+  ...IRACING_CARS.filter((c) => MARC_CAR_NAMES.has(c)),
+  ...IRACING_CARS.filter((c) => !MARC_CAR_NAMES.has(c)),
+];
+const SORTED_IRACING_TRACKS = [
+  ...IRACING_TRACKS.filter((t) => MARC_TRACK_CONFIGS.has(t)),
+  ...IRACING_TRACKS.filter((t) => !MARC_TRACK_CONFIGS.has(t)),
+];
 import { GGFrictionCircle } from "./GGFrictionCircle";
 import { TelemetryChart } from "./TelemetryChart";
 import { TrackMap2D } from "./TrackMap2D";
@@ -1137,9 +1150,22 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                   id="telCar"
                   value={car}
                   onChange={setCar}
-                  options={isIracing ? IRACING_CARS : garageCars}
+                  options={isIracing ? SORTED_IRACING_CARS : garageCars}
                   placeholder="e.g. Ferrari 296 GT3"
                   required
+                  optionBadge={
+                    isIracing
+                      ? (opt) =>
+                          MARC_CAR_NAMES.has(opt) ? (
+                            <span
+                              title="You own this car"
+                              style={{ color: "#60A5FA", fontSize: "11px", lineHeight: 1 }}
+                            >
+                              ✓
+                            </span>
+                          ) : null
+                      : undefined
+                  }
                 />
               </div>
             </div>
@@ -1154,19 +1180,29 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                     id="telTrack"
                     value={track}
                     onChange={setTrack}
-                    options={IRACING_TRACKS}
+                    options={SORTED_IRACING_TRACKS}
                     placeholder="e.g. Sebring International Raceway - International"
                     required
-                    optionBadge={(opt) =>
-                      iracingTracksWithGeometry.has(opt) ? (
-                        <span
-                          title="Authentic track geometry in database"
-                          style={{ color: "#10B981", fontSize: "11px", lineHeight: 1 }}
-                        >
-                          ●
-                        </span>
-                      ) : null
-                    }
+                    optionBadge={(opt) => (
+                      <span style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
+                        {MARC_TRACK_CONFIGS.has(opt) && (
+                          <span
+                            title="You own this track"
+                            style={{ color: "#60A5FA", fontSize: "11px", lineHeight: 1 }}
+                          >
+                            ✓
+                          </span>
+                        )}
+                        {iracingTracksWithGeometry.has(opt) && (
+                          <span
+                            title="Authentic track geometry in database"
+                            style={{ color: "#10B981", fontSize: "11px", lineHeight: 1 }}
+                          >
+                            ●
+                          </span>
+                        )}
+                      </span>
+                    )}
                   />
                 ) : (
                   <input
