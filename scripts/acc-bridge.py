@@ -254,7 +254,7 @@ class SPageFileStatic(ctypes.Structure):
 # FRAME NORMALIZATION LOGIC
 # ---------------------------------------------------------------------------
 
-def normalize_acc_frame(physics, graphics=None, max_rpm=8500, track_length=5000):
+def normalize_acc_frame(physics, graphics=None, max_rpm=8500, track_length=5000, car_model="", track_name=""):
     """
     Transforms raw ctypes structures into the canonical frame shape consumed
     by the ApexWall JS bridge and web dashboard.
@@ -301,6 +301,9 @@ def normalize_acc_frame(physics, graphics=None, max_rpm=8500, track_length=5000)
     lap_distance = round(normalized_car_pos * total_dist)
 
     return {
+        "game": "Assetto Corsa Competizione",
+        "car": car_model,
+        "track": track_name,
         "speed": max(0, round(float(physics.speedKmh))),
         "rpm": max(0, int(physics.rpms)),
         "maxRpm": max(1000, int(max_rpm)) if max_rpm else 8500,
@@ -492,8 +495,11 @@ def main():
     max_rpm = 8500
     track_length = 5000.0
     last_packet_id = -1
+    static_check_counter = 0
 
     # Read Static block once at startup if available
+    car_model = ""
+    track_name = ""
     try:
         static_shm = open_shm(STATIC_MAP, 784)
         if static_shm:
@@ -503,8 +509,10 @@ def main():
                 max_rpm = statics.maxRpm
             if statics.trackSplineLength > 0:
                 track_length = statics.trackSplineLength
+            car_model = statics.carModel.strip("\x00") if hasattr(statics, "carModel") else ""
+            track_name = statics.track.strip("\x00") if hasattr(statics, "track") else ""
             static_shm.close()
-            sys.stderr.write(f"[ACC BRIDGE] ✓ Loaded static data: maxRpm={max_rpm}, trackLength={track_length:.0f}m\n")
+            sys.stderr.write(f"[ACC BRIDGE] ✓ Loaded static data: maxRpm={max_rpm}, trackLength={track_length:.0f}m, car={car_model}, track={track_name}\n")
             sys.stderr.flush()
     except Exception as e:
         sys.stderr.write(f"[ACC BRIDGE] Note: Could not read static map: {e}\n")
@@ -547,7 +555,26 @@ def main():
                 except Exception:
                     graphics = None
 
-            frame = normalize_acc_frame(physics, graphics, max_rpm=max_rpm, track_length=track_length)
+            # Re-read static block every ~5s to detect car/track changes
+            static_check_counter += 1
+            if static_check_counter % 300 == 0:
+                try:
+                    s_shm = open_shm(STATIC_MAP, 784)
+                    if s_shm:
+                        s_buf = s_shm.read(static_size)
+                        s_statics = SPageFileStatic.from_buffer_copy(s_buf)
+                        new_car = s_statics.carModel.strip("\x00") if hasattr(s_statics, "carModel") else ""
+                        new_track = s_statics.track.strip("\x00") if hasattr(s_statics, "track") else ""
+                        if new_car != car_model or new_track != track_name:
+                            sys.stderr.write(f"[ACC BRIDGE] Car/track changed: {new_car} @ {new_track}\n")
+                            sys.stderr.flush()
+                            car_model, track_name = new_car, new_track
+                        s_shm.close()
+                except Exception:
+                    pass
+
+            frame = normalize_acc_frame(physics, graphics, max_rpm=max_rpm, track_length=track_length,
+                                            car_model=car_model, track_name=track_name)
             emit_frame(frame)
             time.sleep(1.0 / 60.0)
 

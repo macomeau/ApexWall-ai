@@ -274,6 +274,19 @@ function broadcastFrame(frame) {
     console.log(`[DETECT] Active sim: ${activeGame}`);
   }
 
+  // Generic car/track change detection (ACC frames carry car/track; iRacing handled separately)
+  if (frame.car || frame.track) {
+    const fc = frame.car || "", ft = frame.track || "";
+    if ((fc && fc !== cloudCarName) || (ft && ft !== cloudTrackName)) {
+      if (cloudCarName || cloudTrackName) {
+        console.log(`[DETECT] Car/track changed: ${fc || "?"} @ ${ft || "?"}`);
+      }
+      cloudCarName = fc;
+      cloudTrackName = ft;
+      cloudSessionId = null; // new cloud session on change
+    }
+  }
+
   const payload = JSON.stringify({ type: "telemetry_frame", payload: frame });
   for (const c of activeClients) {
     if (c.readyState === 1) c.send(payload);
@@ -374,6 +387,8 @@ function parseForzaPacket(msg) {
     tFL = f(244); tFR = f(248); tRL = f(252); tRR = f(256);
   }
   const lapDist = msg.length >= 272 ? Math.round(msg.readFloatLE(268)) : 0;
+  // CarOrdinal at offset 212 (Forza Motorsport Data Out) — numeric ID, not a name
+  const carOrdinal = msg.length >= 216 ? msg.readInt32LE(212) : 0;
   let throttle = 0, steer = 0, brake = 0, gear = 0;
   if (msg.length >= 297) {
     throttle = Math.round((msg.readUInt8(291) / 255) * 100);
@@ -384,6 +399,7 @@ function parseForzaPacket(msg) {
   }
   return {
     game: "Forza Motorsport",
+    car: carOrdinal ? `Car #${carOrdinal}` : "",
     speed: speedKmh,
     rpm: Math.round(msg.readFloatLE(16)),
     gear, throttle, brake, steer, latG, longG,
@@ -391,6 +407,84 @@ function parseForzaPacket(msg) {
     tyreTemps: { FL: tFL, FR: tFR, RL: tRL, RR: tRR },
     tyrePressures: { FL: 28.0, FR: 28.0, RL: 27.5, RR: 27.5 },
   };
+}
+
+// F1 track IDs → names (per Codemasters UDP spec)
+const F1_TRACKS = {
+  0: "Melbourne", 1: "Paul Ricard", 2: "Shanghai", 3: "Sakhir", 4: "Catalunya",
+  5: "Monaco", 6: "Montreal", 7: "Silverstone", 8: "Hockenheim", 9: "Hungaroring",
+  10: "Spa", 11: "Monza", 12: "Singapore", 13: "Suzuka", 14: "Abu Dhabi",
+  15: "Texas", 16: "Brazil", 17: "Austria", 18: "Sochi", 19: "Mexico",
+  20: "Baku", 21: "Sakhir Short", 22: "Silverstone Short", 23: "Texas Short",
+  24: "Suzuka Short", 25: "Hanoi", 26: "Zandvoort", 27: "Imola", 28: "Portimão",
+  29: "Jeddah", 30: "Miami", 31: "Las Vegas", 32: "Losail", 33: "Qatar",
+};
+// F1 team IDs → names
+const F1_TEAMS = {
+  0: "Mercedes", 1: "Ferrari", 2: "Red Bull Racing", 3: "Williams",
+  4: "Aston Martin", 5: "Alpine", 6: "AlphaTauri", 7: "Haas",
+  8: "McLaren", 9: "Alfa Romeo",
+};
+
+let f1TrackName = "";
+let f1TeamName = "";
+
+/**
+ * F1 UDP wrapper: intercepts Session (1) and Participants (4) packets for
+ * track/team detection, delegates Telemetry (6) packets to parseF1Packet.
+ */
+function parseF1Wrapper(msg) {
+  if (!msg || msg.length < 24) return null;
+  const packetFormat = msg.readUInt16LE(0);
+  let headerSize, packetId, playerCarIndex;
+  if (packetFormat >= 2023) {
+    if (msg.length < 29) return null;
+    headerSize = 29; packetId = msg.readUInt8(6); playerCarIndex = msg.readUInt8(27);
+  } else if (packetFormat === 2022) {
+    if (msg.length < 24) return null;
+    headerSize = 24; packetId = msg.readUInt8(5); playerCarIndex = msg.readUInt8(22);
+  } else return null;
+
+  // Session packet (1): trackId at offset headerSize+12 (uint8)
+  if (packetId === 1 && msg.length >= headerSize + 13) {
+    const trackId = msg.readUInt8(headerSize + 12);
+    const name = F1_TRACKS[trackId] || "";
+    if (name && name !== f1TrackName) {
+      console.log(`[F1] Track: ${name}`);
+      f1TrackName = name;
+      cloudTrackName = name;
+      cloudSessionId = null;
+    }
+    return null;
+  }
+  // Participants packet (4): player teamId
+  if (packetId === 4) {
+    const stride = packetFormat >= 2023 ? 60 : 58; // approx participant record size
+    const off = headerSize + playerCarIndex * stride;
+    if (msg.length >= off + 2 && playerCarIndex >= 0) {
+      // teamId is at a fixed offset within participant record (varies by version; try common)
+      // For 2023+: header(29) + 22*60 records, teamId at record+1
+      const teamId = msg.readUInt8(off + 1);
+      const name = F1_TEAMS[teamId] || "";
+      if (name && name !== f1TeamName) {
+        console.log(`[F1] Team: ${name}`);
+        f1TeamName = name;
+        cloudCarName = name;
+        cloudSessionId = null;
+      }
+    }
+    return null;
+  }
+  // Telemetry packet (6)
+  if (packetId === 6) {
+    const frame = parseF1Packet(msg);
+    if (frame) {
+      if (f1TrackName) frame.track = f1TrackName;
+      if (f1TeamName) frame.car = f1TeamName;
+    }
+    return frame;
+  }
+  return null;
 }
 
 // F1 22 / 23 / 24 / 25 (Port 20777, Packet 6: Car Telemetry)
@@ -618,7 +712,7 @@ if (isTestMode) {
   if (want("ams2") || want("automobilista") || want("pcars2"))
     startUDPListener("Automobilista 2", PORTS.AMS2, parseAMS2Packet);
   if (want("forza")) startUDPListener("Forza", PORTS.FORZA, parseForzaPacket);
-  if (want("f1")) startUDPListener("F1 22/23/24/25", PORTS.F1, parseF1Packet);
+  if (want("f1")) startUDPListener("F1 22/23/24/25", PORTS.F1, parseF1Wrapper);
 
   // Assetto Corsa Competizione — Python shared-memory bridge (spawns acc-bridge.py)
   if (want("acc") || want("assetto-corsa-competizione")) {
