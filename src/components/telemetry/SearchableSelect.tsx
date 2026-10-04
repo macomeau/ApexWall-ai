@@ -12,6 +12,11 @@ interface SearchableSelectProps {
   /** Optional per-option trailing indicator (e.g. "has authentic geometry"). */
   optionBadge?: (option: string) => React.ReactNode;
   maxVisible?: number;
+  /**
+   * Optional splitter: returns [main, sub] for two-line rendering.
+   * E.g. "Track - Config" → ["Track", "Config"]. Null sub = single line.
+   */
+  getOptionParts?: (option: string) => [string, string | null];
 }
 
 /**
@@ -28,6 +33,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   required,
   optionBadge,
   maxVisible = 9,
+  getOptionParts,
 }) => {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -124,7 +130,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
             boxShadow: "0 12px 32px rgba(0, 0, 0, 0.5)",
           }}
         >
-          {filtered.slice(0, 200).map((opt, i) => (
+          {filtered.slice(0, 200).map((opt, i) => {
+            const parts = getOptionParts?.(opt);
+            const [main, sub] = parts ?? [opt, null];
+            return (
             <li
               key={opt}
               role="option"
@@ -147,12 +156,24 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 background: i === highlight ? "rgba(56, 189, 248, 0.16)" : "transparent",
               }}
             >
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {opt}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+                {sub ? (
+                  <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
+                      {main}
+                    </span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "11px", color: "#94A3B8" }}>
+                      {sub}
+                    </span>
+                  </span>
+                ) : (
+                  main
+                )}
               </span>
               {optionBadge?.(opt)}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

@@ -1183,6 +1183,10 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
                     options={SORTED_IRACING_TRACKS}
                     placeholder="e.g. Sebring International Raceway - International"
                     required
+                    getOptionParts={(opt) => {
+                      const idx = opt.indexOf(" - ");
+                      return idx > 0 ? [opt.slice(0, idx), opt.slice(idx + 3)] : [opt, null];
+                    }}
                     optionBadge={(opt) => (
                       <span style={{ display: "inline-flex", gap: "4px", alignItems: "center" }}>
                         {MARC_TRACK_CONFIGS.has(opt) && (
