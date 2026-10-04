@@ -186,15 +186,48 @@ app.all("/api/auth/*", async (c) => {
 });
 
 // ---------- AI routes ----------
+import {
+  RaceEngineerRequestSchema,
+  GenerateSetupRequestSchema,
+  MemoryRateLimiter,
+  MAX_PAYLOAD_BYTES,
+  getClientIp,
+} from "../../src/lib/api-schemas";
+
+// In-memory token-bucket limiters (10 req/min per IP per route).
+// Per-function-instance; acceptable for a personal deployment.
+const generateSetupLimiter = new MemoryRateLimiter(10, 60 * 1000);
+const raceEngineerLimiter = new MemoryRateLimiter(10, 60 * 1000);
+
 async function jsonBody(c: any) {
   const body = await c.req.json().catch(() => null);
   return body;
 }
 
+/** Shared guard for AI routes: rate limit + payload cap. Returns an error response or null. */
+function guardAiRoute(c: any, limiter: MemoryRateLimiter): Response | null {
+  const clientIp = getClientIp(c.req.headers as unknown as Headers);
+  const { allowed } = limiter.check(clientIp);
+  if (!allowed) {
+    return c.json({ error: "Rate limit exceeded. Try again in a minute." }, 429);
+  }
+  const contentLength = c.req.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
+    return c.json({ error: "Payload too large. Maximum allowed size is 32KB." }, 413);
+  }
+  return null;
+}
+
 app.post("/api/generate-setup", async (c) => {
+  const guard = guardAiRoute(c, generateSetupLimiter);
+  if (guard) return guard;
   const body = await jsonBody(c);
   if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
-  const { status, json } = await handleGenerateSetup(body);
+  const parsed = GenerateSetupRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
+  }
+  const { status, json } = await handleGenerateSetup(parsed.data);
   return c.json(json, status as any);
 });
 
@@ -206,9 +239,15 @@ app.post("/api/analyze-telemetry", async (c) => {
 });
 
 app.post("/api/race-engineer", async (c) => {
+  const guard = guardAiRoute(c, raceEngineerLimiter);
+  if (guard) return guard;
   const body = await jsonBody(c);
   if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
-  const { status, json } = await handleRaceEngineer(body);
+  const parsed = RaceEngineerRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
+  }
+  const { status, json } = await handleRaceEngineer(parsed.data);
   return c.json(json, status as any);
 });
 
