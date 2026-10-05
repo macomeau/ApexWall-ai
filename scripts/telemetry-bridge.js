@@ -269,7 +269,7 @@ function broadcastFrame(frame) {
   totalPacketsReceived++;
   lastPacketTime = Date.now();
 
-  if (activeGame !== frame.game) {
+  if (frame.game && activeGame !== frame.game) {
     activeGame = frame.game;
     console.log(`[DETECT] Active sim: ${activeGame}`);
   }
