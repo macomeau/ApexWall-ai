@@ -166,7 +166,13 @@ function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap; meta: { v
   const rows: RawRow[] = [];
   const get = (cells: number[], c: number | null) => (c == null ? NaN : cells[c]);
 
-  for (let i = dataStart; i < lines.length; i++) {
+  // Adaptive stride: for very large files (e.g. 360 Hz full-session exports),
+  // sample every Nth data line to keep memory bounded. Downstream analysis
+  // downsamples to ~1500 points anyway, so striding here loses nothing.
+  const dataLines = lines.length - dataStart;
+  const stride = dataLines > 120000 ? Math.ceil(dataLines / 100000) : 1;
+
+  for (let i = dataStart; i < lines.length; i += stride) {
     const raw = lines[i].split(delimiter);
     if (raw.length < 2) continue;
     // Skip non-data rows (stray text, repeated headers, footers)

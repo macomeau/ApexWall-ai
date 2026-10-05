@@ -785,6 +785,9 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     }
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      alert(`Could not read telemetry file: ${reader.error?.message || "file read failed"}. The file may be too large for the browser to load.`);
+    };
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
