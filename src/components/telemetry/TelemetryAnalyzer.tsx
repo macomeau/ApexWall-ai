@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { parseTelemetryCSV, parseTelemetryCSVLaps, parseTelemetryCSVFromFile, parseTelemetryCSVLapsFromFile } from "@/lib/telemetry-parser";
+import { CloudFileStaging } from "@/components/telemetry/CloudFileStaging";
 import { generateDemoCSV, DEMO_TRACKS } from "@/lib/demo-traces";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
 import { computeLapComparison } from "@/lib/telemetry-comparison";
@@ -227,6 +228,35 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     "idle" | "saving" | "saved" | "error" | "auth-error"
   >("idle");
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [loadingStagedFileId, setLoadingStagedFileId] = useState<string | null>(null);
+
+  // Load a raw CSV staged in cloud object storage: download via presigned URL,
+  // then run it through the same parse pipeline as a local file upload.
+  const handleLoadStagedFile = async (file: { id: string; filename: string; downloadUrl?: string | null; size_bytes: number }) => {
+    if (!file.downloadUrl) return;
+    setLoadingStagedFileId(file.id);
+    setErrorMessage("");
+    try {
+      const res = await fetch(file.downloadUrl);
+      if (!res.ok) throw new Error("Could not download staged file.");
+      const blob = await res.blob();
+      const f = new File([blob], file.filename, { type: "text/csv" });
+      if (f.size > 25 * 1024 * 1024) {
+        const laps = await parseTelemetryCSVLapsFromFile(f, file.filename);
+        setAvailableLaps(laps.length > 1 ? laps : []);
+        processParsedTelemetry(await parseTelemetryCSVFromFile(f, file.filename));
+      } else {
+        const text = await blob.text();
+        const laps = parseTelemetryCSVLaps(text, file.filename);
+        setAvailableLaps(laps.length > 1 ? laps : []);
+        processParsedTelemetry(parseTelemetryCSV(text, file.filename));
+      }
+    } catch (err: any) {
+      setErrorMessage(err?.message || "Could not load staged file.");
+    } finally {
+      setLoadingStagedFileId(null);
+    }
+  };
 
   // Auto-learned circuit geometries (synced via Postgres, per user).
   const [learnedTracks, setLearnedTracks] = useState<LearnedTrackMeta[]>([]);
@@ -1126,6 +1156,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             </ul>
           )}
         </div>
+
+        <CloudFileStaging onLoadFile={handleLoadStagedFile} loadingFileId={loadingStagedFileId} />
 
         <form onSubmit={handleAnalyzeSubmit} autoComplete="off">
           {/* Section 1: Platform & Vehicle */}

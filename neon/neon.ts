@@ -18,6 +18,11 @@ for (const k of [
 }
 
 export default defineConfig({
+  // Declaring the bucket here makes Neon inject AWS_* S3 credentials into
+  // the function automatically (the bucket itself was created via the API).
+  buckets: {
+    "telemetry-uploads": {},
+  },
   functions: {
     apexwall: { name: "apexwall", source: "./api/index.ts", env },
   },

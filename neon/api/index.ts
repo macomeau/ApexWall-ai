@@ -503,6 +503,118 @@ app.get("/api/sessions/:id/laps/:lap", async (c) => {
   return c.json({ lap: rows[0] });
 });
 
+// ---------- telemetry file staging (Neon Object Storage) ----------
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+const TELEMETRY_BUCKET = "telemetry-uploads";
+
+function storageClient() {
+  // Neon injects AWS_* S3 credentials automatically when the bucket is
+  // declared in neon.ts. The SDK picks up credentials/region from env;
+  // we only need to set the endpoint and path style explicitly.
+  return new S3Client({
+    endpoint: process.env.AWS_ENDPOINT_URL_S3,
+    region: process.env.AWS_REGION || "us-east-2",
+    forcePathStyle: true,
+  });
+}
+
+/** Object key namespaced per user: telemetry/<userId>/<fileId>/<filename> */
+function telemetryKey(userId: string, fileId: string, filename: string) {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+  return `telemetry/${userId}/${fileId}/${safe}`;
+}
+
+// Mint a presigned PUT URL for direct browser upload. The file bytes never
+// pass through the function, so the 280KB body limit doesn't apply.
+app.post("/api/telemetry-files/presign", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const body = await c.req.json().catch(() => null);
+  const filename = typeof body?.filename === "string" ? body.filename.slice(0, 200) : "telemetry.csv";
+  const contentType = typeof body?.contentType === "string" ? body.contentType.slice(0, 100) : "text/csv";
+  const sizeBytes = Number(body?.sizeBytes) || 0;
+  if (sizeBytes > 5 * 1024 * 1024 * 1024) return c.json({ error: "File exceeds 5 GiB limit" }, 400);
+
+  const fileId = `tf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const key = telemetryKey(userId, fileId, filename);
+  try {
+    const s3 = storageClient();
+    const url = await getSignedUrl(
+      s3,
+      new PutObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: key, ContentType: contentType }),
+      { expiresIn: 900 }
+    );
+    await sql`
+      INSERT INTO telemetry_files (id, user_id, object_key, filename, content_type, size_bytes, status)
+      VALUES (${fileId}, ${userId}, ${key}, ${filename}, ${contentType}, ${sizeBytes}, 'pending')
+    `;
+    return c.json({ fileId, key, uploadUrl: url });
+  } catch (e: any) {
+    return c.json({ error: e?.message || "presign failed" }, 500);
+  }
+});
+
+// Confirm an upload completed: verify the object exists, then mark ready.
+app.post("/api/telemetry-files/:id/confirm", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const fileId = c.req.param("id");
+  const rows = (await sql`SELECT object_key, size_bytes FROM telemetry_files WHERE id = ${fileId} AND user_id = ${userId}`) as any[];
+  if (rows.length === 0) return c.json({ error: "Not found" }, 404);
+  try {
+    const s3 = storageClient();
+    const head = await s3.send(new GetObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: rows[0].object_key, Range: "bytes=0-0" }));
+    const actualSize = Number(head.ContentRange?.split("/")[1] || rows[0].size_bytes);
+    await sql`UPDATE telemetry_files SET status = 'ready', uploaded_at = now(), size_bytes = ${actualSize} WHERE id = ${fileId}`;
+    return c.json({ ok: true, fileId });
+  } catch (e: any) {
+    await sql`UPDATE telemetry_files SET status = 'failed' WHERE id = ${fileId}`;
+    return c.json({ error: "Upload not found in storage — please retry" }, 400);
+  }
+});
+
+// List the user's staged files, with short-lived download URLs.
+app.get("/api/telemetry-files", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const rows = (await sql`
+    SELECT id, filename, content_type, size_bytes, status, game, car, track, lap_count, created_at, uploaded_at, object_key
+    FROM telemetry_files WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT 50
+  `) as any[];
+  const s3 = storageClient();
+  const files = await Promise.all(rows.map(async (r: any) => {
+    let downloadUrl: string | null = null;
+    if (r.status === "ready") {
+      try {
+        downloadUrl = await getSignedUrl(
+          s3,
+          new GetObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: r.object_key }),
+          { expiresIn: 3600 }
+        );
+      } catch { /* leave null */ }
+    }
+    const { object_key, ...rest } = r;
+    return { ...rest, downloadUrl };
+  }));
+  return c.json({ files });
+});
+
+// Delete a staged file (object + registry row).
+app.delete("/api/telemetry-files/:id", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const fileId = c.req.param("id");
+  const rows = (await sql`SELECT object_key FROM telemetry_files WHERE id = ${fileId} AND user_id = ${userId}`) as any[];
+  if (rows.length === 0) return c.json({ error: "Not found" }, 404);
+  try {
+    await storageClient().send(new DeleteObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: rows[0].object_key }));
+  } catch { /* best effort */ }
+  await sql`DELETE FROM telemetry_files WHERE id = ${fileId}`;
+  return c.json({ ok: true });
+});
+
 // One-time admin: seed the RAG knowledge base. Requires auth.
 app.post("/api/admin/seed-knowledge", async (c) => {
   const userId = await getSessionUserId(c);
