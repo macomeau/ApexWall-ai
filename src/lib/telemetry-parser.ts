@@ -49,13 +49,21 @@ interface RawRow {
   pFL: number; pFR: number; pRL: number; pRR: number;
 }
 
-// ---- Stage 1: header/delimiter/units detection, column mapping, raw rows ----
-function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap; meta: { vehicle?: string; venue?: string } } {
-  const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
-  if (lines.length < 5) {
-    throw new Error("Telemetry file contains too few rows to analyze.");
-  }
+// ---- Stage 1a: header/delimiter/units detection + column mapping ----
+// Extracted so both the in-memory parser and the streaming file parser share it.
+interface HeaderAnalysis {
+  col: ColMap;
+  delimiter: string;
+  dataStart: number; // line index where data rows begin
+  meta: { vehicle?: string; venue?: string };
+  speedF: number; distF: number; steerF: number; pressF: number;
+  tempF: (v: number) => number;
+  timeF: number;
+  thrPct: boolean; brkPct: boolean;
+  toPct: (v: number, isPctUnit: boolean) => number;
+}
 
+function analyzeHeaders(lines: string[]): HeaderAnalysis {
   // Detect delimiter: comma, semicolon, or tab
   let delimiter = ",";
   if (lines[0].includes(";") && !lines[0].includes(",")) delimiter = ";";
@@ -163,56 +171,135 @@ function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap; meta: { v
   const toPct = (v: number, isPctUnit: boolean) =>
     Math.min(100, Math.max(0, Math.round(isPctUnit || v > 1.05 ? v : v * 100)));
 
+  return {
+    col, delimiter, dataStart, meta,
+    speedF, distF, steerF, pressF, tempF, timeF, thrPct, brkPct, toPct,
+  };
+}
+
+// ---- Stage 1b: parse one data line into a RawRow (null = skip) ----
+function parseDataRow(line: string, h: HeaderAnalysis, synthTime: number): RawRow | null {
+  const raw = line.split(h.delimiter);
+  if (raw.length < 2) return null;
+  // Skip non-data rows (stray text, repeated headers, footers)
+  let numeric = 0, total = 0;
+  const cells = new Array(raw.length);
+  for (let k = 0; k < raw.length; k++) {
+    const s = raw[k].trim();
+    if (!s) { cells[k] = NaN; continue; }
+    total++;
+    const v = Number(s);
+    if (!isNaN(v)) { numeric++; cells[k] = v; } else cells[k] = NaN;
+  }
+  if (total === 0 || numeric / total < 0.5) return null;
+
+  const { col } = h;
+  const get = (c: number | null) => (c == null ? NaN : cells[c]);
+  const t = num(get(col.time)) * h.timeF;
+  // Without a time column, synthesize from row index at 20 Hz
+  const time = col.time != null ? t : synthTime;
+  return {
+    t: time,
+    lap: col.lap != null ? Math.round(num(get(col.lap))) : -1,
+    dist: num(get(col.dist)) * h.distF,
+    speed: num(get(col.speed)) * h.speedF,
+    thr: h.toPct(num(get(col.throttle)), h.thrPct),
+    brk: h.toPct(num(get(col.brake)), h.brkPct),
+    steer: num(get(col.steer)) * h.steerF,
+    gear: col.gear != null ? Math.max(1, Math.min(8, Math.round(num(get(col.gear)))) || 1) : 3,
+    rpm: num(get(col.rpm)),
+    latG: num(get(col.latG)),
+    longG: num(get(col.longG)),
+    tFL: h.tempF(num(get(col.tempFL))), tFR: h.tempF(num(get(col.tempFR))),
+    tRL: h.tempF(num(get(col.tempRL))), tRR: h.tempF(num(get(col.tempRR))),
+    pFL: num(get(col.pressFL)) * h.pressF, pFR: num(get(col.pressFR)) * h.pressF,
+    pRL: num(get(col.pressRL)) * h.pressF, pRR: num(get(col.pressRR)) * h.pressF,
+  };
+}
+
+// ---- Stage 1c: in-memory raw row parsing (small files) ----
+function parseRawRows(csvText: string): { rows: RawRow[]; col: ColMap; meta: { vehicle?: string; venue?: string } } {
+  const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
+  if (lines.length < 5) {
+    throw new Error("Telemetry file contains too few rows to analyze.");
+  }
+  const h = analyzeHeaders(lines);
+
   const rows: RawRow[] = [];
-  const get = (cells: number[], c: number | null) => (c == null ? NaN : cells[c]);
 
   // Adaptive stride: for very large files (e.g. 360 Hz full-session exports),
   // sample every Nth data line to keep memory bounded. Downstream analysis
   // downsamples to ~1500 points anyway, so striding here loses nothing.
-  const dataLines = lines.length - dataStart;
+  const dataLines = lines.length - h.dataStart;
   const stride = dataLines > 120000 ? Math.ceil(dataLines / 100000) : 1;
 
-  for (let i = dataStart; i < lines.length; i += stride) {
-    const raw = lines[i].split(delimiter);
-    if (raw.length < 2) continue;
-    // Skip non-data rows (stray text, repeated headers, footers)
-    let numeric = 0, total = 0;
-    const cells = new Array(raw.length);
-    for (let k = 0; k < raw.length; k++) {
-      const s = raw[k].trim();
-      if (!s) { cells[k] = NaN; continue; }
-      total++;
-      const v = Number(s);
-      if (!isNaN(v)) { numeric++; cells[k] = v; } else cells[k] = NaN;
-    }
-    if (total === 0 || numeric / total < 0.5) continue;
-
-    const t = num(get(cells, col.time)) * timeF;
-    // Without a time column, synthesize from row index at 20 Hz
-    const time = col.time != null ? t : (rows.length * 0.05);
-    rows.push({
-      t: time,
-      lap: col.lap != null ? Math.round(num(get(cells, col.lap))) : -1,
-      dist: num(get(cells, col.dist)) * distF,
-      speed: num(get(cells, col.speed)) * speedF,
-      thr: toPct(num(get(cells, col.throttle)), thrPct),
-      brk: toPct(num(get(cells, col.brake)), brkPct),
-      steer: num(get(cells, col.steer)) * steerF,
-      gear: col.gear != null ? Math.max(1, Math.min(8, Math.round(num(get(cells, col.gear)))) || 1) : 3,
-      rpm: num(get(cells, col.rpm)),
-      latG: num(get(cells, col.latG)),
-      longG: num(get(cells, col.longG)),
-      tFL: tempF(num(get(cells, col.tempFL))), tFR: tempF(num(get(cells, col.tempFR))),
-      tRL: tempF(num(get(cells, col.tempRL))), tRR: tempF(num(get(cells, col.tempRR))),
-      pFL: num(get(cells, col.pressFL)) * pressF, pFR: num(get(cells, col.pressFR)) * pressF,
-      pRL: num(get(cells, col.pressRL)) * pressF, pRR: num(get(cells, col.pressRR)) * pressF,
-    });
+  let synthIdx = 0;
+  for (let i = h.dataStart; i < lines.length; i += stride) {
+    const row = parseDataRow(lines[i], h, synthIdx * 0.05);
+    if (row) { rows.push(row); synthIdx++; }
   }
 
   if (rows.length === 0) {
     throw new Error("Could not parse numeric telemetry data from the file.");
   }
-  return { rows, col, meta };
+  return { rows, col: h.col, meta: h.meta };
+}
+
+// ---- Stage 1d: streaming file parser for large files ----
+// Reads the file in chunks so a 500MB+ CSV never sits fully in memory.
+// Two passes: count data lines, then parse with stride to cap at ~100k rows.
+async function parseRawRowsFromFile(file: File): Promise<{ rows: RawRow[]; col: ColMap; meta: { vehicle?: string; venue?: string } }> {
+  const CHUNK = 4 * 1024 * 1024;
+
+  const readChunk = async (offset: number, size: number): Promise<string> =>
+    await file.slice(offset, offset + size).text();
+
+  // Pass 0: headers from the first chunk
+  const headText = await readChunk(0, Math.min(CHUNK, file.size));
+  const headLines = headText.split(/\r?\n/).filter(line => line.trim().length > 0);
+  if (headLines.length < 5) {
+    throw new Error("Telemetry file contains too few rows to analyze.");
+  }
+  const h = analyzeHeaders(headLines);
+
+  // Pass 1: count total lines (fast — just scan for newlines per chunk)
+  let totalLines = 0;
+  for (let offset = 0; offset < file.size; offset += CHUNK) {
+    const text = await readChunk(offset, CHUNK);
+    for (let i = 0; i < text.length; i++) if (text[i] === "\n") totalLines++;
+  }
+  const dataLines = Math.max(1, totalLines - h.dataStart);
+  const stride = dataLines > 120000 ? Math.ceil(dataLines / 100000) : 1;
+
+  // Pass 2: parse with stride, handling lines split across chunk boundaries
+  const rows: RawRow[] = [];
+  let carry = "";
+  let lineIdx = 0; // absolute line index in the file
+  let synthIdx = 0;
+  for (let offset = 0; offset < file.size; offset += CHUNK) {
+    const text = carry + (await readChunk(offset, CHUNK));
+    const parts = text.split("\n");
+    carry = parts.pop() ?? ""; // last element may be a partial line
+    for (const rawLine of parts) {
+      const line = rawLine.replace(/\r$/, "");
+      const idx = lineIdx++;
+      if (idx < h.dataStart) continue;
+      if (line.trim().length === 0) continue;
+      if ((idx - h.dataStart) % stride !== 0) continue;
+      const row = parseDataRow(line, h, synthIdx * 0.05);
+      if (row) { rows.push(row); synthIdx++; }
+    }
+  }
+  // Trailing line without a final newline
+  if (carry.trim().length > 0 && lineIdx >= h.dataStart) {
+    const row = parseDataRow(carry.replace(/\r$/, ""), h, synthIdx * 0.05);
+    if (row) rows.push(row);
+  }
+
+  if (rows.length === 0) {
+    throw new Error("Could not parse numeric telemetry data from the file.");
+  }
+  return { rows, col: h.col, meta: h.meta };
 }
 
 // ---- Stage 2: split raw rows into per-lap groups (valid laps only) ----
@@ -509,8 +596,16 @@ export function parseTelemetryCSVLaps(csvText: string, filename: string = "telem
  * Historical entry point: returns the fastest complete lap when a Lap
  * column exists, otherwise the whole file as a single lap.
  */
+/**
+ * Historical entry point: returns the fastest complete lap when a Lap
+ * column exists, otherwise the whole file as a single lap.
+ */
 export function parseTelemetryCSV(csvText: string, filename: string = "telemetry.csv"): ParsedTelemetryFile {
-  const laps = parseTelemetryCSVLaps(csvText, filename);
+  return pickBestLap(parseTelemetryCSVLaps(csvText, filename));
+}
+
+/** Shared fastest-complete-lap selection used by both sync and file parsers. */
+function pickBestLap(laps: ParsedTelemetryFile[]): ParsedTelemetryFile {
   // Pick the fastest COMPLETE lap. A partial lap (pit in/out, off-track) always
   // has a shorter duration than a full lap, so a naive min-duration pick
   // selects fragments. Filter to laps covering ~most of the max distance first.
@@ -536,4 +631,17 @@ export function parseTelemetryCSV(csvText: string, filename: string = "telemetry
     if (dur >= 15 && dur < bestDur) { bestDur = dur; best = l; }
   }
   return best ?? most ?? laps[0];
+}
+
+/**
+ * Streaming file variants for large telemetry files (100MB+). Read the file
+ * in chunks so it never sits fully in memory, with adaptive stride sampling.
+ */
+export async function parseTelemetryCSVLapsFromFile(file: File, filename: string = "telemetry.csv"): Promise<ParsedTelemetryFile[]> {
+  const { rows, col, meta } = await parseRawRowsFromFile(file);
+  return groupLapRows(rows, col).map(g => parseLapRows(g.rows, col, g.lapNumber, filename, meta));
+}
+
+export async function parseTelemetryCSVFromFile(file: File, filename: string = "telemetry.csv"): Promise<ParsedTelemetryFile> {
+  return pickBestLap(await parseTelemetryCSVLapsFromFile(file, filename));
 }

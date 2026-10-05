@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
-import { parseTelemetryCSV, parseTelemetryCSVLaps } from "@/lib/telemetry-parser";
+import { parseTelemetryCSV, parseTelemetryCSVLaps, parseTelemetryCSVFromFile, parseTelemetryCSVLapsFromFile } from "@/lib/telemetry-parser";
 import { generateDemoCSV, DEMO_TRACKS } from "@/lib/demo-traces";
 import { parseDuckDBTelemetry } from "@/lib/duckdb-parser";
 import { computeLapComparison } from "@/lib/telemetry-comparison";
@@ -778,6 +778,23 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
         processParsedTelemetry(parsed);
       } catch (err: any) {
         alert(`Could not parse DuckDB telemetry file: ${err.message}`);
+      } finally {
+        setIsParsingDuckDB(false);
+      }
+      return;
+    }
+
+    // Large files (>25MB): stream in chunks instead of loading the whole
+    // file into memory — a 600MB CSV would OOM the tab otherwise.
+    if (file.size > 25 * 1024 * 1024) {
+      setIsParsingDuckDB(true);
+      try {
+        const laps = await parseTelemetryCSVLapsFromFile(file, file.name);
+        setAvailableLaps(laps.length > 1 ? laps : []);
+        const parsed = await parseTelemetryCSVFromFile(file, file.name);
+        processParsedTelemetry(parsed);
+      } catch (err: any) {
+        alert(`Could not parse telemetry file: ${err.message}`);
       } finally {
         setIsParsingDuckDB(false);
       }
