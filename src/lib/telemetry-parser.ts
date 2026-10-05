@@ -310,7 +310,18 @@ function parseLapRows(
       const prev = downsampled[idx - 1].speed;
       const next = downsampled[idx + 1].speed;
       if (p.speed <= prev && p.speed <= next && Math.abs(p.steer) > 15) {
-        cornerSpeeds.push({ dist: p.dist, speed: p.speed, steer: p.steer });
+        // Merge with the previous detection if it's the same corner (<150m apart):
+        // keep only the slowest point (the true apex) instead of a cluster.
+        const last = cornerSpeeds[cornerSpeeds.length - 1];
+        if (last && Math.abs(p.dist - last.dist) < 150) {
+          if (p.speed < last.speed) {
+            last.dist = p.dist;
+            last.speed = p.speed;
+            last.steer = p.steer;
+          }
+        } else {
+          cornerSpeeds.push({ dist: p.dist, speed: p.speed, steer: p.steer });
+        }
       }
     }
   });
@@ -464,7 +475,7 @@ function parseLapRows(
     minSpeed,
     maxLatG: Number(maxLatG.toFixed(2)),
     maxDecelG: Number(Math.abs(maxDecelG).toFixed(2)),
-    minCornerSpeeds: cornerSpeeds.slice(0, 6),
+    minCornerSpeeds: cornerSpeeds,
     trailBrakingScore,
     throttleSmoothness,
     steeringScrub,
