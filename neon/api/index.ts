@@ -46,6 +46,13 @@ import {
 
 const app = new Hono();
 
+// Global error handler: always return JSON, never plain-text "Internal Server
+// Error" — the frontend parses every response as JSON.
+app.onError((err, c) => {
+  console.error("[api] unhandled error:", err?.message || err);
+  return c.json({ error: "Internal server error. Please try again." }, 500);
+});
+
 const AUTH_BASE = process.env.NEON_AUTH_BASE_URL;
 
 // ---------- session resolution ----------

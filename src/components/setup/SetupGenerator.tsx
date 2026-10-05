@@ -103,7 +103,8 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
         }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("json") ? await res.json() : { error: await res.text() };
       if (!res.ok) {
         throw new Error(data.error || "Failed to generate setup.");
       }

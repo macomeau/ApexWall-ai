@@ -156,7 +156,8 @@ I have your active session telemetry and chassis telemetry synced. How does the 
         }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      const data = contentType.includes("json") ? await res.json() : { reply: await res.text() };
       const replyContent = data.reply || "Copy driver, telemetry signal interrupted. State your issue again.";
 
       const assistantMsg: Message = {
