@@ -108,6 +108,64 @@ body.amoled {
   border-bottom-color: rgba(255, 255, 255, 0.05) !important;
 }
 
+/* ==========================================================================
+   LIGHT MODE (Daylight-readable, keeps accent system intact)
+   ========================================================================== */
+html.light, body.light, [data-theme="light"], :root.light {
+  --bg-base: #F1F5F9 !important;
+  --bg-surface: #FFFFFF !important;
+  --bg-surface-elevated: #F8FAFC !important;
+  --bg-surface-hover: #EDF2F7 !important;
+  --bg-inset: #E2E8F0 !important;
+  --bg-inset-hover: #CBD5E1 !important;
+
+  --border-subtle: rgba(15, 23, 42, 0.06) !important;
+  --border-default: rgba(15, 23, 42, 0.10) !important;
+  --border-strong: rgba(59, 130, 246, 0.35) !important;
+
+  --text-primary: #0F172A !important;
+  --text-secondary: #334155 !important;
+  --text-muted: #64748B !important;
+  --text-dim: #94A3B8 !important;
+
+  --accent-blue-subtle: rgba(59, 130, 246, 0.10) !important;
+  --status-emerald-subtle: rgba(16, 185, 129, 0.12) !important;
+  --status-amber-subtle: rgba(245, 158, 11, 0.14) !important;
+  --status-rose-subtle: rgba(244, 63, 94, 0.10) !important;
+  --status-cyan-subtle: rgba(56, 189, 248, 0.14) !important;
+
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.06) !important;
+  --shadow-md: 0 4px 12px -1px rgba(15, 23, 42, 0.08) !important;
+  --shadow-lg: 0 12px 28px -4px rgba(15, 23, 42, 0.12) !important;
+}
+
+html.light {
+  color-scheme: light;
+}
+
+body.light {
+  background-color: #F1F5F9 !important;
+}
+
+.light header {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+.light .glass-card,
+.light .panel,
+.light .glass-card-nested,
+.light .score-card-main,
+.light .telemetry-chart-module {
+  background: #FFFFFF !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+.light .panel-header {
+  background: #F8FAFC !important;
+  border-bottom-color: rgba(15, 23, 42, 0.06) !important;
+}
+
 /* Base Reset */
 *, *::before, *::after {
   box-sizing: border-box;

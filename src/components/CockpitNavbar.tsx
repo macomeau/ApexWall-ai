@@ -30,7 +30,7 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
   activeTrack = "Spa-Francorchamps",
 }) => {
   const { user, signOut } = useAuth();
-  const { isAmoled, toggleTheme } = useTheme();
+  const { isAmoled, toggleTheme, theme, themeLabel } = useTheme();
   const { units, setUnits } = useUnits();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +130,7 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
             <span className="text-slate-400">{activeTrack}</span>
           </div>
 
-          {/* AMOLED Mode Switcher Toggle */}
+          {/* Theme Switcher Toggle (Slate -> Light -> AMOLED) */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -139,14 +139,18 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
                 ? "bg-white/10 text-white border-white/20 shadow-sm"
                 : "bg-white/[0.04] text-slate-400 hover:text-slate-200 border-white/[0.08]"
             }`}
-            title="Toggle AMOLED True Black Mode (Pure OLED pitch black vs Obsidian Slate)"
+            title={`Theme: ${themeLabel} — click to cycle Slate → Light → AMOLED`}
           >
             <span
               className={`w-2 h-2 rounded-full transition-all ${
-                isAmoled ? "bg-emerald-400 shadow-[0_0_8px_#34D399]" : "bg-slate-500"
+                theme === "light"
+                  ? "bg-amber-400 shadow-[0_0_8px_#FBBF24]"
+                  : isAmoled
+                    ? "bg-emerald-400 shadow-[0_0_8px_#34D399]"
+                    : "bg-slate-500"
               }`}
             ></span>
-            <span className="font-mono text-[11px] tracking-tight">AMOLED</span>
+            <span className="font-mono text-[11px] tracking-tight">{themeLabel.toUpperCase()}</span>
             {isAmoled && (
               <span className="hidden sm:inline-block text-[9px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold">
                 PITCH
