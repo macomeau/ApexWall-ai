@@ -166,6 +166,15 @@ body.light {
   border-bottom-color: rgba(15, 23, 42, 0.06) !important;
 }
 
+/* Canvas containers: lighter than black in light mode (traces stay visible) */
+.light .trackmap-canvas-container {
+  background: radial-gradient(circle at 50% 50%, #475569 0%, #334155 100%) !important;
+}
+
+.light .gg-canvas-container {
+  background: #334155 !important;
+}
+
 /* Base Reset */
 *, *::before, *::after {
   box-sizing: border-box;
