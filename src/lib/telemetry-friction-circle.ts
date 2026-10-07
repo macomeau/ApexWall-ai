@@ -7,7 +7,34 @@ import {
 } from "@/types/telemetry";
 
 /**
- * Compute an angular hull (36 bins, 10 deg each) representing the 95th percentile grip boundary
+ * Neutral placeholders used only when the underlying sample count is zero — not measurements.
+ * These fallbacks preserve consumer stability while marking metrics as estimated.
+ */
+export const INSUFFICIENT_SAMPLE_FALLBACK = {
+  gripUtilizationPct: 75,
+  trailBrakingTransitionEfficiency: 72,
+  quadrantGripPct: 70,
+  refGripUtilizationPct: 88,
+} as const;
+
+export interface GGFrictionCircleEstimatedFlags {
+  gripUtilizationPct: boolean;
+  trailBrakingTransitionEfficiency: boolean;
+  trailBrakingLeftGripPct: boolean;
+  trailBrakingRightGripPct: boolean;
+  powerDownLeftGripPct: boolean;
+  powerDownRightGripPct: boolean;
+  refGripUtilizationPct?: boolean;
+}
+
+declare module "@/types/telemetry" {
+  interface GGFrictionCircleData {
+    estimated?: GGFrictionCircleEstimatedFlags;
+  }
+}
+
+/**
+ * Compute an angular hull (36 bins, 10 deg each) representing the 90th percentile grip boundary
  */
 function computeEnvelopeHull(
   pts: TelemetryPoint[]
@@ -128,15 +155,23 @@ export function computeGGFrictionCircle(
     }
   });
 
+  const isGripEstimated = dynamicCount === 0;
   const gripUtilizationPct =
-    dynamicCount > 0 ? Math.round((optimalGripCount / dynamicCount) * 100) : 75;
+    dynamicCount > 0
+      ? Math.round((optimalGripCount / dynamicCount) * 100)
+      : INSUFFICIENT_SAMPLE_FALLBACK.gripUtilizationPct;
+
+  const isTBLeftEstimated = qTBLeft.length === 0;
+  const isTBRightEstimated = qTBRight.length === 0;
+  const isPDLeftEstimated = qPDLeft.length === 0;
+  const isPDRightEstimated = qPDRight.length === 0;
 
   const avgGrip = (arr: number[]) =>
     arr.length > 0
       ? Math.round(
           (arr.reduce((a, b) => a + b, 0) / arr.length / Math.max(1, p95G)) * 100
         )
-      : 70;
+      : INSUFFICIENT_SAMPLE_FALLBACK.quadrantGripPct;
 
   const quadrantStats: GGFrictionQuadrantStats = {
     trailBrakingLeftGripPct: Math.min(100, avgGrip(qTBLeft)),
@@ -162,15 +197,17 @@ export function computeGGFrictionCircle(
     }
   });
 
+  const isTrailBrakingTransitionEstimated = combinedSampleCount === 0;
   const trailBrakingTransitionEfficiency =
     combinedSampleCount > 0
       ? Math.round((combinedSumNorm / combinedSampleCount) * 100)
-      : 72;
+      : INSUFFICIENT_SAMPLE_FALLBACK.trailBrakingTransitionEfficiency;
 
   // Outer Envelope Hulls
   const envelopeHull = computeEnvelopeHull(driverPts);
   let refEnvelopeHull: { latG: number; longG: number }[] | undefined;
   let refGripUtilizationPct: number | undefined;
+  let isRefGripEstimated = false;
 
   if (ref && ref.points.length > 0) {
     refEnvelopeHull = computeEnvelopeHull(ref.points);
@@ -190,8 +227,19 @@ export function computeGGFrictionCircle(
       }
     });
     refGripUtilizationPct =
-      refDyn > 0 ? Math.round((refOpt / refDyn) * 100) : 88;
+      refDyn > 0 ? Math.round((refOpt / refDyn) * 100) : INSUFFICIENT_SAMPLE_FALLBACK.refGripUtilizationPct;
+    isRefGripEstimated = refDyn === 0;
   }
+
+  const estimated: GGFrictionCircleEstimatedFlags = {
+    gripUtilizationPct: isGripEstimated,
+    trailBrakingTransitionEfficiency: isTrailBrakingTransitionEstimated,
+    trailBrakingLeftGripPct: isTBLeftEstimated,
+    trailBrakingRightGripPct: isTBRightEstimated,
+    powerDownLeftGripPct: isPDLeftEstimated,
+    powerDownRightGripPct: isPDRightEstimated,
+    refGripUtilizationPct: isRefGripEstimated,
+  };
 
   // Generate Technical Diagnosis Verdict
   let gripDeficitVerdict = "";
@@ -225,5 +273,6 @@ export function computeGGFrictionCircle(
     refEnvelopeHull,
     refGripUtilizationPct,
     gripDeficitVerdict,
+    estimated,
   };
 }
