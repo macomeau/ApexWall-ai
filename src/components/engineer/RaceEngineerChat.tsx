@@ -830,6 +830,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
                     </div>
                     <div className="text-[10px] text-slate-600 mb-1.5 leading-snug">
                       Via the rig bridge — works with the tab hidden behind the sim. Audio is transcribed in the cloud.
+                      Set <span className="font-mono text-slate-500">PTT_SPEAKER</span> on the bridge to route the engineer's voice to specific headphones.
                     </div>
                     {bridgePttButtons.length === 0 ? (
                       <div className="text-xs text-slate-500 mb-2">No bridge buttons mapped yet.</div>

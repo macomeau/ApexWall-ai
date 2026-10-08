@@ -679,13 +679,24 @@ function parseF1Packet(msg) {
 
 /**
  * Speak text on the rig via Windows Speech API (SAPI).
- * Fire-and-forget: PowerShell reads base64 text (no quoting issues) and
- * speaks it through the default audio device. PTT_VOICE env can name a
- * specific installed voice; rate is bumped slightly for radio feel.
+ * If PTT_SPEAKER is set (output device name/index) and the PTT sidecar is
+ * alive, the sidecar renders the WAV and plays it on that device (e.g.
+ * wireless headphones). Otherwise falls back to direct SAPI on the default
+ * device. Fire-and-forget.
  */
 function speakViaBridge(text) {
   if (!text || typeof text !== "string") return;
   const short = text.slice(0, 600);
+  const routed = process.env.PTT_SPEAKER && pttSidecar && pttSidecar.stdin;
+  if (routed) {
+    try {
+      pttSidecar.stdin.write(JSON.stringify({ cmd: "speak", text: short }) + "\n");
+      console.log(`[PTT] Speaking engineer reply on "${process.env.PTT_SPEAKER}" (${short.length} chars)`);
+    } catch (e) {
+      console.warn(`[PTT] Sidecar speak failed: ${e.message}`);
+    }
+    return;
+  }
   try {
     const { execFile } = require("child_process");
     const b64 = Buffer.from(short, "utf16le").toString("base64");
@@ -796,9 +807,16 @@ function startPTTSidecar() {
         broadcastMessage("ptt_listening", { active: !!msg.active });
       } else if (msg.type === "ptt_status") {
         if (msg.ok === false && msg.error) console.warn(`[PTT] ${msg.error}`);
-        else if (msg.joysticks) {
-          const names = msg.joysticks.map((j) => `#${j.index} ${j.name}`).join(", ");
-          console.log(`[PTT] Joysticks: ${names || "none"} | Mic: ${msg.mic || "none"}`);
+        else {
+          if (msg.joysticks) {
+            const names = msg.joysticks.map((j) => `#${j.index} ${j.name}`).join(", ");
+            console.log(`[PTT] Joysticks: ${names || "none"} | Mic: ${msg.mic || "none"}`);
+          }
+          if (msg.output_devices) {
+            const outs = msg.output_devices.map((d) => `#${d.index} ${d.name}`).join(" | ");
+            console.log(`[PTT] Output devices: ${outs || "none"} — set PTT_SPEAKER to (part of) a name to route engineer voice there`);
+          }
+          if (msg.speaker) console.log(`[PTT] Engineer voice -> "${msg.speaker}"`);
         }
         broadcastMessage("ptt_status", msg);
       }

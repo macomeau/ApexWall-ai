@@ -18,8 +18,12 @@ Stdout events (JSON per line):
   {"type": "ptt_listening", "active": true}
 
 Env:
-  PTT_MIC  - substring of the mic device name (or numeric index) to use.
-             Defaults to the system default input device.
+  PTT_MIC      - substring of the mic device name (or numeric index) to use.
+                 Defaults to the system default input device.
+  PTT_SPEAKER  - substring of the output device name (or numeric index) for
+                 engineer voice replies. Defaults to system default output.
+                 The bridge logs all output devices at startup so you can
+                 pick the right name (e.g. your wireless headphones).
 
 Requires: pip install pygame sounddevice
 """
@@ -139,6 +143,88 @@ def init_mic():
         log_status(ok=False, error=f"sounddevice unavailable: {e}")
         return 0
 
+def resolve_speaker():
+    """Pick the output device for engineer voice replies (PTT_SPEAKER or default)."""
+    if sd is None:
+        return None
+    want = os.environ.get("PTT_SPEAKER", "").strip()
+    # Log all output devices so the user can pick a name
+    try:
+        devs = sd.query_devices()
+        outs = [(i, d["name"]) for i, d in enumerate(devs) if d["max_output_channels"] > 0]
+        log_status(ok=True, output_devices=[{"index": i, "name": n} for i, n in outs])
+    except Exception:
+        pass
+    if not want:
+        return None  # system default output
+    try:
+        try:
+            idx = int(want)
+            d = sd.query_devices(idx)
+            if d["max_output_channels"] <= 0:
+                raise ValueError("not an output device")
+            log_status(ok=True, speaker=d["name"])
+            return idx
+        except ValueError:
+            pass
+        devs = sd.query_devices()
+        for i, d in enumerate(devs):
+            if want.lower() in d["name"].lower() and d["max_output_channels"] > 0:
+                log_status(ok=True, speaker=d["name"])
+                return i
+        log_status(ok=False, error=f'speaker "{want}" not found, using default output')
+    except Exception as e:
+        log_status(ok=False, error=f"speaker resolve failed: {e}")
+    return None
+
+_speak_lock = threading.Lock()
+
+def speak_text(text, speaker_idx):
+    """Render text to WAV via Windows SAPI, then play it on the chosen output."""
+    if not text or sd is None:
+        return
+    if not _speak_lock.acquire(blocking=False):
+        return  # already speaking — radio discipline, don't talk over
+    try:
+        import subprocess
+        import tempfile
+        short = text[:600]
+        b64 = base64.b64encode(short.encode("utf-16-le")).decode("ascii")
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        ps = (
+            "$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"+b64+"'));"
+            "Add-Type -AssemblyName System.Speech;"
+            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+            "$s.Rate=1;"
+            "$s.SetOutputToWaveFile('"+tmp_path.replace("'", "''")+"');"
+            "$s.Speak($t)|Out-Null;$s.Dispose()"
+        )
+        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                       capture_output=True, timeout=30)
+        # Play the WAV on the selected output device
+        with wave.open(tmp_path, "rb") as w:
+            rate = w.getframerate()
+            nch = w.getnchannels()
+            sampw = w.getsampwidth()
+            raw = w.readframes(w.getnframes())
+        import numpy as np
+        dtype = {1: np.int8, 2: np.int16, 4: np.int32}[sampw]
+        audio = np.frombuffer(raw, dtype=dtype)
+        if nch > 1:
+            audio = audio.reshape(-1, nch)
+        sd.play(audio, samplerate=rate, device=speaker_idx)
+        sd.wait()
+    except Exception as e:
+        log_status(ok=False, error=f"speak failed: {e}")
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        _speak_lock.release()
+
 class Recorder:
     def __init__(self, rate):
         self.rate = rate
@@ -193,6 +279,7 @@ def main():
         log_status(ok=False, error="no joystick support; PTT disabled")
         # stay alive for stdin commands anyway
     mic_rate = init_mic()
+    speaker_idx = resolve_speaker()
     recorder = None
     recording = False
     rec_mapped_snapshot = set()
@@ -230,6 +317,10 @@ def main():
         elif cmd == "learn_stop":
             learning = False
             log_status(ok=True, learning=False)
+        elif cmd == "speak":
+            text = msg.get("text") or ""
+            if text:
+                threading.Thread(target=speak_text, args=(text, speaker_idx), daemon=True).start()
 
     log_status(ok=True, note="ptt-bridge ready; send {\"cmd\":\"map\",...}")
 
