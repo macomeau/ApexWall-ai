@@ -360,7 +360,7 @@ import { sql } from "../../src/lib/db";
  * Both set via `neon functions deploy --env` — personal deployment only.
  */
 async function getIngestUserId(c: any): Promise<string | null> {
-  const bridgeKey = c.req.headers.get("x-bridge-key");
+  const bridgeKey = c.req.header("x-bridge-key");
   if (
     bridgeKey &&
     process.env.BRIDGE_API_KEY &&
