@@ -50,6 +50,14 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   const [pttButtons, setPttButtons] = useState<number[]>([]);
   const [isMappingPtt, setIsMappingPtt] = useState(false);
   const [showPttMap, setShowPttMap] = useState(false);
+  // Bridge PTT (in-game): buttons learned via the rig bridge sidecar ("joy:btn").
+  // Works with the tab hidden behind the sim; audio is transcribed in the cloud.
+  const [bridgePttButtons, setBridgePttButtons] = useState<string[]>([]);
+  const [bridgeConnected, setBridgeConnected] = useState(false);
+  const [bridgeListening, setBridgeListening] = useState(false);
+  const [isBridgeLearning, setIsBridgeLearning] = useState(false);
+  const bridgeWsRef = useRef<WebSocket | null>(null);
+  const bridgePttButtonsRef = useRef<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const gamepadPollingRef = useRef<number | null>(null);
@@ -71,7 +79,95 @@ I have your active session telemetry and chassis telemetry synced. How does the 
           pttButtonsRef.current = clean;
         }
       }
+      const savedBridge = localStorage.getItem("apexwall-ptt-bridge-buttons");
+      if (savedBridge) {
+        const parsed = JSON.parse(savedBridge);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter((s) => typeof s === "string" && /^\d+:\d+$/.test(s));
+          setBridgePttButtons(clean);
+          bridgePttButtonsRef.current = clean;
+        }
+      }
     } catch (_e) {}
+  }, []);
+
+  const persistBridgePttButtons = (buttons: string[]) => {
+    setBridgePttButtons(buttons);
+    bridgePttButtonsRef.current = buttons;
+    try {
+      localStorage.setItem("apexwall-ptt-bridge-buttons", JSON.stringify(buttons));
+    } catch (_e) {}
+    // Push the map to the bridge sidecar
+    try {
+      bridgeWsRef.current?.send(JSON.stringify({ type: "ptt_map", payload: { buttons } }));
+    } catch (_e) {}
+  };
+
+  // Bridge WebSocket: receive PTT transcripts + learn results, send button map.
+  // WebSocket stays alive in background tabs, so in-game PTT works tab-hidden.
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+    let cancelled = false;
+
+    const connect = () => {
+      if (cancelled) return;
+      try {
+        ws = new WebSocket("ws://localhost:9001");
+      } catch (_e) {
+        reconnectTimer = setTimeout(connect, 5000);
+        return;
+      }
+      bridgeWsRef.current = ws;
+
+      ws.onopen = () => {
+        setBridgeConnected(true);
+        // Send the current bridge button map to the sidecar
+        try {
+          ws!.send(JSON.stringify({ type: "ptt_map", payload: { buttons: bridgePttButtonsRef.current } }));
+        } catch (_e) {}
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "ptt_transcript" && data.payload?.text) {
+            const transcript = String(data.payload.text);
+            setInput(transcript);
+            handleSendMessage(transcript);
+          } else if (data.type === "ptt_learned" && data.payload?.button) {
+            const btn = String(data.payload.button);
+            setIsBridgeLearning(false);
+            if (!bridgePttButtonsRef.current.includes(btn)) {
+              persistBridgePttButtons([...bridgePttButtonsRef.current, btn].sort());
+            }
+          } else if (data.type === "ptt_listening") {
+            setBridgeListening(!!data.payload?.active);
+          } else if (data.type === "ptt_status" && data.payload?.learning === false) {
+            setIsBridgeLearning(false);
+          }
+        } catch (_e) {}
+      };
+
+      ws.onclose = () => {
+        setBridgeConnected(false);
+        setBridgeListening(false);
+        if (bridgeWsRef.current === ws) bridgeWsRef.current = null;
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        try { ws?.close(); } catch (_e) {}
+      };
+    };
+
+    connect();
+    return () => {
+      cancelled = true;
+      clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch (_e) {}
+      if (bridgeWsRef.current === ws) bridgeWsRef.current = null;
+    };
   }, []);
 
   const persistPttButtons = (buttons: number[]) => {
@@ -104,6 +200,23 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   const cancelPttMapping = () => {
     setIsMappingPtt(false);
     isMappingRef.current = false;
+  };
+
+  const startBridgeLearn = () => {
+    if (!bridgeConnected) return;
+    setIsBridgeLearning(true);
+    setShowPttMap(false);
+    try {
+      bridgeWsRef.current?.send(JSON.stringify({ type: "ptt_learn_start" }));
+    } catch (_e) {
+      setIsBridgeLearning(false);
+    }
+    // Safety timeout in case the sidecar never answers
+    setTimeout(() => setIsBridgeLearning(false), 20000);
+  };
+
+  const removeBridgePttButton = (btn: string) => {
+    persistBridgePttButtons(bridgePttButtonsRef.current.filter((b) => b !== btn));
   };
 
   const activeSim = currentSetup?.game || "Assetto Corsa Competizione";
@@ -573,17 +686,33 @@ I have your active session telemetry and chassis telemetry synced. How does the 
                 type="button"
                 onClick={isMappingPtt ? cancelPttMapping : toggleVoiceInput}
                 className={`px-3 py-2 rounded-md font-mono text-xs flex items-center gap-1.5 transition-all border ${
-                  isMappingPtt
+                  isMappingPtt || isBridgeLearning
                     ? "bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse"
-                    : isListening
-                      ? "bg-red-500/20 border-red-500 text-red-300 animate-pulse"
-                      : "bg-white/[0.04] border-white/10 hover:border-blue-500/50 text-slate-300 hover:text-white"
+                    : bridgeListening
+                      ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 animate-pulse"
+                      : isListening
+                        ? "bg-red-500/20 border-red-500 text-red-300 animate-pulse"
+                        : "bg-white/[0.04] border-white/10 hover:border-blue-500/50 text-slate-300 hover:text-white"
                 }`}
-                title={isMappingPtt ? "Press a wheel button to map it (click again to cancel)" : "Push-To-Talk Radio (Click or press a mapped wheel button)"}
+                title={
+                  isMappingPtt
+                    ? "Press a wheel button to map it (click again to cancel)"
+                    : isBridgeLearning
+                      ? "Press a wheel button — the bridge is learning… (click to cancel)"
+                      : bridgeListening
+                        ? "Bridge is recording your radio message…"
+                        : "Push-To-Talk Radio (Click, wheel button, or bridge PTT in-game)"
+                }
               >
-                <span className={`w-2 h-2 rounded-full ${isMappingPtt ? "bg-amber-400" : isListening ? "bg-red-500" : "bg-slate-400"}`} />
+                <span className={`w-2 h-2 rounded-full ${isMappingPtt || isBridgeLearning ? "bg-amber-400" : bridgeListening ? "bg-emerald-400" : isListening ? "bg-red-500" : bridgeConnected ? "bg-emerald-500" : "bg-slate-400"}`} />
                 <span className="hidden sm:inline">
-                  {isMappingPtt ? "Press wheel btn…" : isListening ? "Listening..." : `Radio PTT${pttButtons.length > 0 ? ` (${pttButtons.length})` : ""}`}
+                  {isMappingPtt || isBridgeLearning
+                    ? "Press wheel btn…"
+                    : bridgeListening
+                      ? "Recording…"
+                      : isListening
+                        ? "Listening..."
+                        : `Radio PTT${pttButtons.length + bridgePttButtons.length > 0 ? ` (${pttButtons.length + bridgePttButtons.length})` : ""}`}
                 </span>
               </button>
               <button
@@ -603,6 +732,9 @@ I have your active session telemetry and chassis telemetry synced. How does the 
                   className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-white/10 bg-[#0d121c] shadow-xl shadow-black/50 p-3 z-50"
                 >
                   <div className="text-[11px] font-mono font-bold text-slate-300 mb-2">PTT WHEEL BUTTONS</div>
+                  <div className="text-[10px] text-slate-600 mb-1.5 leading-snug">
+                    Browser PTT — works when this tab is visible.
+                  </div>
                   {pttButtons.length === 0 ? (
                     <div className="text-xs text-slate-500 mb-2">No buttons mapped yet.</div>
                   ) : (
@@ -644,6 +776,55 @@ I have your active session telemetry and chassis telemetry synced. How does the 
                   <div className="text-[10px] text-slate-600 mt-2 leading-snug">
                     Click "+ Map", then press the wheel button. Repeat for each redundant PTT button.
                   </div>
+
+                  <div className="border-t border-white/10 mt-3 pt-2.5">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[11px] font-mono font-bold text-slate-300">BRIDGE PTT (IN-GAME)</div>
+                      <span className={`w-2 h-2 rounded-full ${bridgeConnected ? "bg-emerald-400" : "bg-slate-600"}`} title={bridgeConnected ? "Bridge connected" : "Bridge not reachable (is it running on this PC?)"} />
+                    </div>
+                    <div className="text-[10px] text-slate-600 mb-1.5 leading-snug">
+                      Via the rig bridge — works with the tab hidden behind the sim. Audio is transcribed in the cloud.
+                    </div>
+                    {bridgePttButtons.length === 0 ? (
+                      <div className="text-xs text-slate-500 mb-2">No bridge buttons mapped yet.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {bridgePttButtons.map((b) => (
+                          <span
+                            key={b}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-mono text-emerald-300"
+                          >
+                            {b}
+                            <button
+                              type="button"
+                              onClick={() => removeBridgePttButton(b)}
+                              className="text-emerald-400 hover:text-red-400 ml-0.5"
+                              title={`Unmap ${b}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={startBridgeLearn}
+                      disabled={!bridgeConnected || isBridgeLearning}
+                      className="w-full px-2 py-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-40 text-xs font-mono transition-colors"
+                    >
+                      {isBridgeLearning ? "Press a wheel button…" : "+ Learn via bridge"}
+                    </button>
+                    {bridgePttButtons.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => persistBridgePttButtons([])}
+                        className="w-full mt-1.5 text-[11px] font-mono text-slate-500 hover:text-red-400 transition-colors"
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -656,7 +837,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isListening ? "Listening to driver comms..." : "Tell your race engineer how the car feels or ask about telemetry..."}
+              placeholder={isListening ? "Listening to driver comms..." : bridgeListening ? "Bridge recording radio message…" : "Tell your race engineer how the car feels or ask about telemetry..."}
               className="w-full bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none font-sans"
             />
           </div>

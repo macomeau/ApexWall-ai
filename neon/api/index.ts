@@ -622,6 +622,74 @@ app.delete("/api/telemetry-files/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---------- PTT voice transcription (bridge) ----------
+// The rig bridge records the driver's push-to-talk audio and POSTs it here
+// as raw WAV (16kHz mono 16-bit, <=280KB ≈ 8s). Transcribed via the AI Gateway
+// (Gemini audio input) and returned as text for the race engineer chat.
+app.post("/api/ptt/transcribe", async (c) => {
+  const userId = await getIngestUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+  const contentType = c.req.header("content-type") || "";
+  if (!contentType.includes("audio/")) {
+    return c.json({ error: "Expected audio/* body" }, 400);
+  }
+
+  const buf = await c.req.arrayBuffer().catch(() => null);
+  if (!buf || buf.byteLength === 0) return c.json({ error: "Empty audio" }, 400);
+  if (buf.byteLength > 280 * 1024) return c.json({ error: "Audio too large (max ~8s)" }, 413);
+
+  const token = process.env.NEON_AI_GATEWAY_TOKEN || "";
+  const base = (process.env.NEON_AI_GATEWAY_BASE_URL || "").replace(/\/$/, "");
+  if (!token || !base) return c.json({ error: "AI Gateway not configured" }, 500);
+
+  const models = (process.env.AI_MODELS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  if (models.length === 0) models.push("gemini-3-flash");
+
+  const audioB64 = Buffer.from(buf).toString("base64");
+  let lastErr = "no models tried";
+  for (const model of models) {
+    try {
+      const r = await fetch(`${base}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 300,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "Transcribe this sim-racing driver radio message exactly. It may contain motorsport terms (apex, understeer, oversteer, trail braking, etc.). Return only the transcription, no commentary.",
+                },
+                { type: "input_audio", input_audio: { data: audioB64, format: "wav" } },
+              ],
+            },
+          ],
+        }),
+      });
+      if (!r.ok) {
+        lastErr = `model ${model}: HTTP ${r.status}`;
+        continue;
+      }
+      const j: any = await r.json();
+      const transcript = (j.choices?.[0]?.message?.content || "").trim();
+      if (transcript) return c.json({ transcript });
+      lastErr = `model ${model}: empty transcript`;
+    } catch (e: any) {
+      lastErr = `model ${model}: ${e.message}`;
+    }
+  }
+  return c.json({ error: `Transcription failed: ${lastErr}` }, 502);
+});
+
 // One-time admin: seed the RAG knowledge base. Requires auth.
 app.post("/api/admin/seed-knowledge", async (c) => {
   const userId = await getSessionUserId(c);

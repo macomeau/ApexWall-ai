@@ -254,10 +254,30 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server });
 let activeClients = [];
+let pttSidecar = null; // PTT voice sidecar process (spawned at startup)
 wss.on("connection", (ws) => {
   activeClients.push(ws);
   ws.on("close", () => { activeClients = activeClients.filter((c) => c !== ws); });
+  ws.on("message", (data) => {
+    // Web app -> bridge commands (currently: PTT button mapping)
+    try {
+      const msg = JSON.parse(data.toString());
+      if (msg && typeof msg.type === "string" && msg.type.startsWith("ptt_") && pttSidecar) {
+        // Forward to the PTT sidecar as a command: {cmd, ...}
+        const cmd = { cmd: msg.type.replace(/^ptt_/, ""), ...(msg.payload || {}) };
+        try { pttSidecar.stdin.write(JSON.stringify(cmd) + "\n"); } catch (_e) {}
+      }
+    } catch (_e) {}
+  });
 });
+
+/** Send a typed message to all connected web clients. */
+function broadcastMessage(type, payload) {
+  const msg = JSON.stringify({ type, payload: payload || {} });
+  for (const c of activeClients) {
+    try { if (c.readyState === 1) c.send(msg); } catch (_e) {}
+  }
+}
 
 server.listen(WS_PORT, () => {
   console.log(`[BRIDGE] Listening on http://localhost:${WS_PORT}\n`);
@@ -651,6 +671,109 @@ function parseF1Packet(msg) {
   };
 }
 
+/**
+ * Transcribe PTT audio via the cloud /api/ptt/transcribe endpoint.
+ * wavBuffer: 16kHz mono 16-bit WAV, <=280KB (~8s).
+ * Returns the transcript string, or null on failure.
+ */
+async function transcribePTTAudio(wavBuffer) {
+  if (!CLOUD_API_URL || !CLOUD_BRIDGE_KEY) {
+    console.warn("[PTT] Skipping transcription: APEXWALL_API_URL / APEXWALL_BRIDGE_KEY not set");
+    return null;
+  }
+  try {
+    const r = await fetch(`${CLOUD_API_URL}/api/ptt/transcribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "audio/wav",
+        "X-Bridge-Key": CLOUD_BRIDGE_KEY,
+      },
+      body: wavBuffer,
+    });
+    if (!r.ok) {
+      console.warn(`[PTT] Transcription failed: HTTP ${r.status}`);
+      return null;
+    }
+    const data = await r.json();
+    return data.transcript || null;
+  } catch (e) {
+    console.warn(`[PTT] Transcription error: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * PTT voice sidecar: spawns scripts/ptt-bridge.py, which watches wheel
+ * buttons (DirectInput) and records the mic while PTT is held.
+ * Audio comes back over stdout as base64 WAV -> transcribed -> broadcast.
+ */
+function startPTTSidecar() {
+  const path = require("path");
+  const fs = require("fs");
+  const { spawn } = require("child_process");
+  const readline = require("readline");
+  const scriptPath = (() => {
+    const candidates = [
+      path.join(path.dirname(process.execPath), "ptt-bridge.py"),
+      path.join(__dirname, "ptt-bridge.py"),
+      path.join(__dirname, "..", "scripts", "ptt-bridge.py"),
+    ];
+    return candidates.find((p) => fs.existsSync(p)) || candidates[0];
+  })();
+  if (!fs.existsSync(scriptPath)) {
+    console.warn(`[PTT] ptt-bridge.py not found at ${scriptPath} — voice PTT disabled`);
+    return;
+  }
+  console.log("[PTT] Starting wheel-button PTT sidecar (pip install pygame sounddevice if it fails)...");
+  try {
+    const py = spawn("python", [scriptPath], { stdio: ["pipe", "pipe", "inherit"] });
+    pttSidecar = py;
+    py.on("error", (e) => {
+      console.warn(`[PTT] Sidecar failed to start: ${e.message} (is Python installed?)`);
+      pttSidecar = null;
+    });
+    py.on("exit", (code) => {
+      console.warn(`[PTT] Sidecar exited (code ${code})`);
+      if (pttSidecar === py) pttSidecar = null;
+    });
+    const rl = readline.createInterface({ input: py.stdout });
+    rl.on("line", (line) => {
+      let msg;
+      try {
+        if (!line.trim()) return;
+        msg = JSON.parse(line.trim());
+      } catch (_e) { return; }
+      if (!msg || !msg.type) return;
+
+      if (msg.type === "ptt_audio" && msg.wav_b64) {
+        const wav = Buffer.from(msg.wav_b64, "base64");
+        console.log(`[PTT] Got ${(wav.length / 1024).toFixed(0)}KB audio, transcribing...`);
+        transcribePTTAudio(wav).then((transcript) => {
+          if (transcript) {
+            console.log(`[PTT] Transcript: "${transcript}"`);
+            broadcastMessage("ptt_transcript", { text: transcript });
+          }
+        });
+      } else if (msg.type === "ptt_learned" && msg.button) {
+        console.log(`[PTT] Learned wheel button: ${msg.button}`);
+        broadcastMessage("ptt_learned", { button: msg.button });
+      } else if (msg.type === "ptt_listening") {
+        broadcastMessage("ptt_listening", { active: !!msg.active });
+      } else if (msg.type === "ptt_status") {
+        if (msg.ok === false && msg.error) console.warn(`[PTT] ${msg.error}`);
+        else if (msg.joysticks) {
+          const names = msg.joysticks.map((j) => `#${j.index} ${j.name}`).join(", ");
+          console.log(`[PTT] Joysticks: ${names || "none"} | Mic: ${msg.mic || "none"}`);
+        }
+        broadcastMessage("ptt_status", msg);
+      }
+    });
+  } catch (e) {
+    console.warn(`[PTT] Could not start sidecar: ${e.message}`);
+    pttSidecar = null;
+  }
+}
+
 // =========================================================================
 // iRACING (shared memory via @emiliosp/node-iracing-sdk)
 // =========================================================================
@@ -818,6 +941,11 @@ if (isTestMode) {
     startUDPListener("Automobilista 2", PORTS.AMS2, parseAMS2Packet);
   if (want("forza")) startUDPListener("Forza", PORTS.FORZA, parseForzaPacket);
   if (want("f1")) startUDPListener("F1 22/23/24/25", PORTS.F1, parseF1Wrapper);
+
+  // PTT voice sidecar — wheel-button push-to-talk for the race engineer.
+  // Runs always (not game-filtered): the driver may key the mic in any sim.
+  // Requires: pip install pygame sounddevice (one-time on the rig).
+  startPTTSidecar();
 
   // Assetto Corsa Competizione — Python shared-memory bridge (spawns acc-bridge.py)
   if (want("acc") || want("assetto-corsa-competizione")) {
