@@ -56,8 +56,11 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   const [bridgeConnected, setBridgeConnected] = useState(false);
   const [bridgeListening, setBridgeListening] = useState(false);
   const [isBridgeLearning, setIsBridgeLearning] = useState(false);
+  // Bridge voice: engineer replies spoken on the rig via Windows TTS (in-game).
+  const [bridgeVoiceEnabled, setBridgeVoiceEnabled] = useState(true);
   const bridgeWsRef = useRef<WebSocket | null>(null);
   const bridgePttButtonsRef = useRef<string[]>([]);
+  const bridgeVoiceEnabledRef = useRef<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const gamepadPollingRef = useRef<number | null>(null);
@@ -88,8 +91,35 @@ I have your active session telemetry and chassis telemetry synced. How does the 
           bridgePttButtonsRef.current = clean;
         }
       }
+      const savedVoice = localStorage.getItem("apexwall-bridge-voice");
+      if (savedVoice !== null) {
+        const on = savedVoice === "1";
+        setBridgeVoiceEnabled(on);
+        bridgeVoiceEnabledRef.current = on;
+      }
     } catch (_e) {}
   }, []);
+
+  const setBridgeVoice = (on: boolean) => {
+    setBridgeVoiceEnabled(on);
+    bridgeVoiceEnabledRef.current = on;
+    try {
+      localStorage.setItem("apexwall-bridge-voice", on ? "1" : "0");
+    } catch (_e) {}
+  };
+
+  /** Shorten reply for radio and send to the bridge for Windows TTS. */
+  const speakBridgeMessage = (text: string) => {
+    if (!bridgeVoiceEnabledRef.current) return;
+    if (!bridgeWsRef.current || bridgeWsRef.current.readyState !== 1) return;
+    try {
+      // Strip markdown, keep first 2 sentences for radio brevity
+      const plain = text.replace(/[*_#`>\-|[\]]/g, "").replace(/\n+/g, " ").trim();
+      const short = plain.split(/(?<=[.?!])\s+/).slice(0, 2).join(" ").slice(0, 400);
+      if (!short) return;
+      bridgeWsRef.current.send(JSON.stringify({ type: "ptt_speak", payload: { text: short } }));
+    } catch (_e) {}
+  };
 
   const persistBridgePttButtons = (buttons: string[]) => {
     setBridgePttButtons(buttons);
@@ -488,6 +518,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
 
       setMessages((prev) => [...prev, assistantMsg]);
       speakRadioMessage(replyContent);
+      speakBridgeMessage(replyContent);
     } catch (_err) {
       const errorMsg: Message = {
         id: `assistant-${Date.now()}`,
@@ -566,6 +597,21 @@ I have your active session telemetry and chassis telemetry synced. How does the 
           >
             <span>{radioAudioEnabled ? "🔊" : "🔇"}</span>
             <span>{radioAudioEnabled ? "Radio Audio: ON" : "Radio Audio: OFF"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBridgeVoice(!bridgeVoiceEnabled)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-mono border transition-all flex items-center gap-2 ${
+              bridgeVoiceEnabled
+                ? "bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-md shadow-emerald-500/10"
+                : "bg-white/5 border-white/10 text-slate-400 hover:text-white"
+            }`}
+            title={bridgeConnected ? "Engineer replies spoken on the rig via Windows TTS (in-game)" : "Bridge voice — connects when the rig bridge is running"}
+          >
+            <span>{bridgeVoiceEnabled ? "🎙️" : "🔇"}</span>
+            <span>{bridgeVoiceEnabled ? "Bridge Voice: ON" : "Bridge Voice: OFF"}</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${bridgeConnected ? "bg-emerald-400" : "bg-slate-600"}`} />
           </button>
         </div>
       </div>

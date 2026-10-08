@@ -259,10 +259,16 @@ wss.on("connection", (ws) => {
   activeClients.push(ws);
   ws.on("close", () => { activeClients = activeClients.filter((c) => c !== ws); });
   ws.on("message", (data) => {
-    // Web app -> bridge commands (currently: PTT button mapping)
+    // Web app -> bridge commands (currently: PTT button mapping + TTS replies)
     try {
       const msg = JSON.parse(data.toString());
-      if (msg && typeof msg.type === "string" && msg.type.startsWith("ptt_") && pttSidecar) {
+      if (!msg || typeof msg.type !== "string") return;
+      if (msg.type === "ptt_speak") {
+        // Engineer reply -> Windows TTS on the rig (in-game voice loop)
+        speakViaBridge(msg.payload && msg.payload.text);
+        return;
+      }
+      if (msg.type.startsWith("ptt_") && pttSidecar) {
         // Forward to the PTT sidecar as a command: {cmd, ...}
         const cmd = { cmd: msg.type.replace(/^ptt_/, ""), ...(msg.payload || {}) };
         try { pttSidecar.stdin.write(JSON.stringify(cmd) + "\n"); } catch (_e) {}
@@ -669,6 +675,35 @@ function parseF1Packet(msg) {
       RR: pressRR > 10 ? pressRR : 21.0,
     },
   };
+}
+
+/**
+ * Speak text on the rig via Windows Speech API (SAPI).
+ * Fire-and-forget: PowerShell reads base64 text (no quoting issues) and
+ * speaks it through the default audio device. PTT_VOICE env can name a
+ * specific installed voice; rate is bumped slightly for radio feel.
+ */
+function speakViaBridge(text) {
+  if (!text || typeof text !== "string") return;
+  const short = text.slice(0, 600);
+  try {
+    const { execFile } = require("child_process");
+    const b64 = Buffer.from(short, "utf16le").toString("base64");
+    const voiceName = (process.env.PTT_VOICE || "").replace(/'/g, "");
+    const ps = [
+      "$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"+b64+"'));",
+      "Add-Type -AssemblyName System.Speech;",
+      "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;",
+      voiceName ? "$s.SelectVoice('"+voiceName+"');" : "",
+      "$s.Rate=1;",
+      "$s.Speak($t)|Out-Null",
+    ].join(" ");
+    execFile("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps],
+      { windowsHide: true, timeout: 30000 }, () => {});
+    console.log(`[PTT] Speaking engineer reply (${short.length} chars)`);
+  } catch (e) {
+    console.warn(`[PTT] TTS failed: ${e.message}`);
+  }
 }
 
 /**
