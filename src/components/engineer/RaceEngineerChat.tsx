@@ -230,13 +230,15 @@ I have your active session telemetry and chassis telemetry synced. How does the 
         }
         lastGamepadBtnState.current = anyMappedPressed;
       }
-      gamepadPollingRef.current = requestAnimationFrame(pollGamepad);
     };
 
-    gamepadPollingRef.current = requestAnimationFrame(pollGamepad);
+    // setInterval (not rAF) so the poller keeps running when the tab is
+    // backgrounded behind the sim — Chrome throttles it to ~1Hz back there,
+    // but a held PTT press still registers. rAF would stop entirely.
+    gamepadPollingRef.current = window.setInterval(pollGamepad, 100);
 
     return () => {
-      if (gamepadPollingRef.current) cancelAnimationFrame(gamepadPollingRef.current);
+      if (gamepadPollingRef.current) clearInterval(gamepadPollingRef.current);
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch (_e) {}
       }
