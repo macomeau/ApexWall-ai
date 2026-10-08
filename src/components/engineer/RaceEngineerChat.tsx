@@ -45,10 +45,66 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   const [radioAudioEnabled, setRadioAudioEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
+  // Multi-button PTT mapping: which wheel/gamepad button indices toggle the radio.
+  // Persisted in localStorage so each wheel's redundant PTT buttons survive reloads.
+  const [pttButtons, setPttButtons] = useState<number[]>([]);
+  const [isMappingPtt, setIsMappingPtt] = useState(false);
+  const [showPttMap, setShowPttMap] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const gamepadPollingRef = useRef<number | null>(null);
   const lastGamepadBtnState = useRef<boolean>(false);
+  const isListeningRef = useRef<boolean>(false);
+  const pttButtonsRef = useRef<number[]>([]);
+  const isMappingRef = useRef<boolean>(false);
+  const showPttMapRef = useRef<HTMLDivElement | null>(null);
+
+  // Load saved PTT mappings
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("apexwall-ptt-buttons");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter((n) => Number.isInteger(n) && n >= 0);
+          setPttButtons(clean);
+          pttButtonsRef.current = clean;
+        }
+      }
+    } catch (_e) {}
+  }, []);
+
+  const persistPttButtons = (buttons: number[]) => {
+    setPttButtons(buttons);
+    pttButtonsRef.current = buttons;
+    try {
+      localStorage.setItem("apexwall-ptt-buttons", JSON.stringify(buttons));
+    } catch (_e) {}
+  };
+
+  const capturePttButton = (btnIndex: number) => {
+    if (!pttButtonsRef.current.includes(btnIndex)) {
+      persistPttButtons([...pttButtonsRef.current, btnIndex].sort((a, b) => a - b));
+    }
+    setIsMappingPtt(false);
+    isMappingRef.current = false;
+    playRadioBeep(true);
+  };
+
+  const removePttButton = (btnIndex: number) => {
+    persistPttButtons(pttButtonsRef.current.filter((b) => b !== btnIndex));
+  };
+
+  const startPttMapping = () => {
+    setShowPttMap(false);
+    setIsMappingPtt(true);
+    isMappingRef.current = true;
+  };
+
+  const cancelPttMapping = () => {
+    setIsMappingPtt(false);
+    isMappingRef.current = false;
+  };
 
   const activeSim = currentSetup?.game || "Assetto Corsa Competizione";
   const activeCar = currentSetup?.car || parsedTelemetry?.filename?.split(/[-_]/)[0]?.toUpperCase() || "GT3 Homologated";
@@ -63,6 +119,18 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Close PTT mapping popover on outside click
+  useEffect(() => {
+    if (!showPttMap) return;
+    const onDown = (e: MouseEvent) => {
+      if (showPttMapRef.current && !showPttMapRef.current.contains(e.target as Node)) {
+        setShowPttMap(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showPttMap]);
 
   // Authentic pit-radio beep sound via Web Audio API
   const playRadioBeep = (open: boolean) => {
@@ -97,6 +165,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
       rec.lang = "en-US";
 
       rec.onstart = () => {
+        isListeningRef.current = true;
         setIsListening(true);
         playRadioBeep(true);
       };
@@ -110,10 +179,12 @@ I have your active session telemetry and chassis telemetry synced. How does the 
       };
 
       rec.onerror = () => {
+        isListeningRef.current = false;
         setIsListening(false);
       };
 
       rec.onend = () => {
+        isListeningRef.current = false;
         setIsListening(false);
         playRadioBeep(false);
       };
@@ -121,26 +192,44 @@ I have your active session telemetry and chassis telemetry synced. How does the 
       recognitionRef.current = rec;
     }
 
-    // Gamepad API Poller for Sim Rig Steering Wheel Button PTT
+    // Gamepad API Poller: capture mode maps a button, otherwise mapped buttons toggle PTT
     const pollGamepad = () => {
       const gamepads = typeof navigator.getGamepads === "function" ? navigator.getGamepads() : [];
-      let anyBtnPressed = false;
-      for (const gp of gamepads) {
-        if (!gp) continue;
-        // Check primary action buttons or wheel thumb buttons (index 0, 1, 4, 5)
-        for (let i = 0; i < Math.min(gp.buttons.length, 12); i++) {
-          if (gp.buttons[i]?.pressed) {
-            anyBtnPressed = true;
-            break;
+
+      if (isMappingRef.current) {
+        // Capture mode: first pressed button wins
+        for (const gp of gamepads) {
+          if (!gp) continue;
+          for (let i = 0; i < gp.buttons.length; i++) {
+            if (gp.buttons[i]?.pressed) {
+              capturePttButton(i);
+              break;
+            }
+          }
+          if (!isMappingRef.current) break;
+        }
+      } else {
+        const mapped = pttButtonsRef.current;
+        let anyMappedPressed = false;
+        if (mapped.length > 0) {
+          for (const gp of gamepads) {
+            if (!gp) continue;
+            for (const idx of mapped) {
+              if (gp.buttons[idx]?.pressed) {
+                anyMappedPressed = true;
+                break;
+              }
+            }
+            if (anyMappedPressed) break;
           }
         }
-      }
 
-      if (anyBtnPressed && !lastGamepadBtnState.current) {
-        // Toggle PTT
-        toggleVoiceInput();
+        if (anyMappedPressed && !lastGamepadBtnState.current) {
+          // Rising edge on any mapped PTT button toggles the radio
+          toggleVoiceInput();
+        }
+        lastGamepadBtnState.current = anyMappedPressed;
       }
-      lastGamepadBtnState.current = anyBtnPressed;
       gamepadPollingRef.current = requestAnimationFrame(pollGamepad);
     };
 
@@ -156,16 +245,19 @@ I have your active session telemetry and chassis telemetry synced. How does the 
 
   const toggleVoiceInput = () => {
     if (!recognitionRef.current) return;
-    if (isListening) {
+    if (isListeningRef.current) {
       try {
         recognitionRef.current.stop();
       } catch (_e) {}
+      isListeningRef.current = false;
       setIsListening(false);
     } else {
       try {
         recognitionRef.current.start();
+        isListeningRef.current = true;
         setIsListening(true);
       } catch (_e) {
+        isListeningRef.current = false;
         setIsListening(false);
       }
     }
@@ -472,21 +564,87 @@ I have your active session telemetry and chassis telemetry synced. How does the 
 
         {/* Input Bar */}
         <div className="p-4 bg-[#0d121c] border-t border-white/10 flex items-center gap-3">
-          {/* Wheel/Voice PTT Button */}
+          {/* Wheel/Voice PTT Button + mapping */}
           {speechSupported && (
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
-              className={`px-3 py-2 rounded-md font-mono text-xs flex items-center gap-1.5 transition-all border ${
-                isListening
-                  ? "bg-red-500/20 border-red-500 text-red-300 animate-pulse"
-                  : "bg-white/[0.04] border-white/10 hover:border-blue-500/50 text-slate-300 hover:text-white"
-              }`}
-              title="Push-To-Talk Radio (Click or Press Wheel Button)"
-            >
-              <span className={`w-2 h-2 rounded-full ${isListening ? "bg-red-500" : "bg-slate-400"}`} />
-              <span className="hidden sm:inline">{isListening ? "Listening..." : "Radio PTT"}</span>
-            </button>
+            <div className="relative flex items-center gap-1">
+              <button
+                type="button"
+                onClick={isMappingPtt ? cancelPttMapping : toggleVoiceInput}
+                className={`px-3 py-2 rounded-md font-mono text-xs flex items-center gap-1.5 transition-all border ${
+                  isMappingPtt
+                    ? "bg-amber-500/20 border-amber-500 text-amber-300 animate-pulse"
+                    : isListening
+                      ? "bg-red-500/20 border-red-500 text-red-300 animate-pulse"
+                      : "bg-white/[0.04] border-white/10 hover:border-blue-500/50 text-slate-300 hover:text-white"
+                }`}
+                title={isMappingPtt ? "Press a wheel button to map it (click again to cancel)" : "Push-To-Talk Radio (Click or press a mapped wheel button)"}
+              >
+                <span className={`w-2 h-2 rounded-full ${isMappingPtt ? "bg-amber-400" : isListening ? "bg-red-500" : "bg-slate-400"}`} />
+                <span className="hidden sm:inline">
+                  {isMappingPtt ? "Press wheel btn…" : isListening ? "Listening..." : `Radio PTT${pttButtons.length > 0 ? ` (${pttButtons.length})` : ""}`}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPttMap((v) => !v)}
+                className="p-2 rounded-md border border-white/10 bg-white/[0.04] text-slate-400 hover:text-white hover:border-blue-500/50 transition-all"
+                title="Map wheel buttons to Radio PTT"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+              {showPttMap && (
+                <div
+                  ref={showPttMapRef}
+                  className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-white/10 bg-[#0d121c] shadow-xl shadow-black/50 p-3 z-50"
+                >
+                  <div className="text-[11px] font-mono font-bold text-slate-300 mb-2">PTT WHEEL BUTTONS</div>
+                  {pttButtons.length === 0 ? (
+                    <div className="text-xs text-slate-500 mb-2">No buttons mapped yet.</div>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {pttButtons.map((b) => (
+                        <span
+                          key={b}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-500/15 border border-blue-500/30 text-[11px] font-mono text-blue-300"
+                        >
+                          Btn {b}
+                          <button
+                            type="button"
+                            onClick={() => removePttButton(b)}
+                            className="text-blue-400 hover:text-red-400 ml-0.5"
+                            title={`Unmap button ${b}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={startPttMapping}
+                    className="w-full px-2 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 text-xs font-mono transition-colors"
+                  >
+                    + Map a wheel button
+                  </button>
+                  {pttButtons.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => persistPttButtons([])}
+                      className="w-full mt-1.5 text-[11px] font-mono text-slate-500 hover:text-red-400 transition-colors"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                  <div className="text-[10px] text-slate-600 mt-2 leading-snug">
+                    Click "+ Map", then press the wheel button. Repeat for each redundant PTT button.
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <div className="flex-1 flex items-center bg-[#151c2a] border border-white/15 focus-within:border-cyan-500 rounded-xl px-4 py-2.5 transition-colors">
