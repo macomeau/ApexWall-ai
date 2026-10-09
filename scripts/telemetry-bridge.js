@@ -396,6 +396,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === "POST" && req.url === "/api/ptt/monitor") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 1024) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const { active } = JSON.parse(body || "{}");
+        if (pttSidecar && pttSidecar.stdin) {
+          pttSidecar.stdin.write(JSON.stringify({ cmd: active ? "monitor_start" : "monitor_stop" }) + "\n");
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, monitoring: !!active }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (req.method === "GET" && req.url === "/api/latest-lap.csv") {
     const points = lastCompletedLap ? lastCompletedLap.points : activeLapBuffer;
     if (!points || points.length === 0) {
@@ -991,6 +1010,10 @@ function startPTTSidecar() {
             broadcastMessage("ptt_transcript", { text: transcript });
           }
         });
+      } else if (msg.type === "ptt_button") {
+        // Diagnostic monitor: log button activity to the bridge console
+        console.log(`[PTT] Button ${msg.button} ${msg.state}`);
+        broadcastMessage("ptt_button", { button: msg.button, state: msg.state });
       } else if (msg.type === "ptt_learned" && msg.button) {
         console.log(`[PTT] Learned wheel button: ${msg.button}`);
         // Persist to config so it survives restarts

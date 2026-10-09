@@ -95,8 +95,10 @@ const CONFIG_PAGE = `<!DOCTYPE html>
       <div class="chips" id="ptt-chips"></div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn-ghost" id="btn-learn" onclick="learnPtt()">+ Learn wheel button</button>
+        <button class="btn-ghost" id="btn-monitor" onclick="toggleMonitor()">Monitor buttons</button>
       </div>
       <div class="hint" id="learn-hint" style="display:none; color:#fbbf24;">Press a wheel button now… (15s timeout)</div>
+      <div class="hint" id="monitor-hint" style="display:none; color:#34d399;">Monitoring — press wheel buttons and watch the bridge console for [PTT] Button events.</div>
     </div>
     <div style="margin-top:12px;"><button class="btn-primary" onclick="savePtt()">Save</button></div>
     <div class="hint" style="margin-top:8px;">Device changes apply on bridge restart. Button map applies immediately.</div>
@@ -268,6 +270,20 @@ async function learnPtt() {
   learning = false;
   $("btn-learn").disabled = false;
   $("learn-hint").style.display = "none";
+}
+
+let monitoring = false;
+async function toggleMonitor() {
+  monitoring = !monitoring;
+  $("btn-monitor").textContent = monitoring ? "Stop monitoring" : "Monitor buttons";
+  $("monitor-hint").style.display = monitoring ? "block" : "none";
+  try {
+    await fetch("/api/ptt/monitor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: monitoring }),
+    });
+  } catch (e) {}
 }
 
 async function pollStatus() {

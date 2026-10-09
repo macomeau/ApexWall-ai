@@ -60,10 +60,6 @@ def init_joysticks():
         import pygame
         if not pygame_ok:
             pygame.joystick.init()
-            try:
-                pygame.event.set_allowed(None)  # we only poll; no event queue needed
-            except Exception:
-                pass
             pygame_ok = True
         # (Re)enumerate — handles hotplug between races
         joysticks = []
@@ -72,7 +68,7 @@ def init_joysticks():
         for i in range(count):
             try:
                 j = pygame.joystick.Joystick(i)
-                j.init()
+                # Note: Joystick.init() deprecated since 2.4 — constructor auto-inits
                 joysticks.append(j)
                 joy_names.append(j.get_name())
             except Exception:
@@ -286,6 +282,7 @@ def main():
     recorder = None
     recording = False
     rec_mapped_snapshot = set()
+    monitor_state = {"active": False, "last_pressed": set()}
 
     # Stdin reader thread (select() doesn't work on stdin under Windows)
     cmd_queue: "queue.Queue[str]" = queue.Queue()
@@ -316,7 +313,7 @@ def main():
         elif cmd == "learn_start":
             learning = True
             learn_deadline = time.time() + 15
-            log_status(ok=True, learning=True)
+            log_status(ok=True, learning=True, note="press a wheel button now")
         elif cmd == "learn_stop":
             learning = False
             log_status(ok=True, learning=False)
@@ -324,6 +321,13 @@ def main():
             text = msg.get("text") or ""
             if text:
                 threading.Thread(target=speak_text, args=(text, speaker_idx), daemon=True).start()
+        elif cmd == "monitor_start":
+            # Diagnostic: log every button press/release to the bridge console
+            log_status(ok=True, monitoring=True, note="press wheel buttons — watch for ptt_button events")
+            monitor_state["active"] = True
+        elif cmd == "monitor_stop":
+            monitor_state["active"] = False
+            log_status(ok=True, monitoring=False)
 
     log_status(ok=True, note="ptt-bridge ready; send {\"cmd\":\"map\",...}")
 
@@ -343,10 +347,19 @@ def main():
 
         pressed = poll_buttons()
 
+        # Diagnostic monitor: report every button press/release
+        if monitor_state["active"]:
+            last = monitor_state["last_pressed"]
+            for btn in sorted(pressed - last):
+                log_event({"type": "ptt_button", "button": btn, "state": "pressed"})
+            for btn in sorted(last - pressed):
+                log_event({"type": "ptt_button", "button": btn, "state": "released"})
+            monitor_state["last_pressed"] = set(pressed)
+
         if learning:
             if now > learn_deadline:
                 learning = False
-                log_status(ok=True, learning=False, note="learn timeout")
+                log_status(ok=True, learning=False, note="learn timeout — no button press detected")
             elif pressed:
                 btn = sorted(pressed)[0]
                 learning = False
