@@ -298,7 +298,7 @@ app.get("/api/telemetry", async (c) => {
 app.post("/api/telemetry", async (c) => {
   const body = await jsonBody(c);
   if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
-  const { status, json } = await saveTelemetrySession(await getSessionUserId(c), body);
+  const { status, json } = await saveTelemetrySession(await getIngestUserId(c), body);
   return c.json(json, status as any);
 });
 
