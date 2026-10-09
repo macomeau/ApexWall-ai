@@ -41,6 +41,8 @@ const gameFilter = gameArgIndex !== -1 && args[gameArgIndex + 1]
   : null;
 
 const WS_PORT = 9001;
+const BRIDGE_VERSION = "1.1.0";
+const bootTime = Date.now();
 
 const PORTS = {
   AMS2: 5606,
@@ -52,6 +54,65 @@ let activeGame = "Awaiting Sim Connection";
 let totalPacketsReceived = 0;
 let lastPacketTime = 0;
 
+// ---------------------------------------------------------------------------
+// Persistent config (%APPDATA%/ApexWall/bridge-config.json on Windows).
+// Env vars still override the file, so existing setups keep working.
+// ---------------------------------------------------------------------------
+const path = require("path");
+const fs = require("fs");
+const CONFIG_PATH = (() => {
+  const base = process.env.APPDATA || path.join(require("os").homedir(), ".config");
+  return path.join(base, "ApexWall", "bridge-config.json");
+})();
+
+const DEFAULT_CONFIG = {
+  apiUrl: "",
+  bridgeKey: "",
+  bridgeUserId: "",
+  pttMic: "",
+  pttSpeaker: "",
+  pttButtons: [],
+  bridgeVoice: true,
+  sims: { iracing: true, acc: true, ams2: true, forza: true, f1: true },
+};
+
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+      return { ...DEFAULT_CONFIG, ...raw, sims: { ...DEFAULT_CONFIG.sims, ...(raw.sims || {}) } };
+    }
+  } catch (e) {
+    console.warn(`[CONFIG] Could not read ${CONFIG_PATH}: ${e.message}`);
+  }
+  return { ...DEFAULT_CONFIG, sims: { ...DEFAULT_CONFIG.sims } };
+}
+
+function saveConfigFile(cfg) {
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+    const { _path, ...persist } = cfg;
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(persist, null, 2));
+    return true;
+  } catch (e) {
+    console.warn(`[CONFIG] Could not write ${CONFIG_PATH}: ${e.message}`);
+    return false;
+  }
+}
+
+const fileConfig = loadConfig();
+console.log(`[CONFIG] Loaded from ${CONFIG_PATH}`);
+
+// Effective config: env vars win over the file.
+function eff(key, envName) {
+  const envVal = process.env[envName];
+  if (envVal != null && envVal !== "") return envVal;
+  return fileConfig[key];
+}
+
+// Device cache from the PTT sidecar (populated via ptt_status messages)
+const deviceCache = { inputs: [], outputs: [], joysticks: [], mic: "", speaker: "", sidecar: false };
+
 // Lap recorder state
 let activeLapBuffer = [];
 let lastCompletedLap = null;
@@ -60,9 +121,10 @@ let lapStartTime = Date.now();
 let lastLapDistance = 0;
 let lastLapNumber = -1;
 
-// F-006: Cloud auto-upload config (set via env vars)
-const CLOUD_API_URL = (process.env.APEXWALL_API_URL || "").replace(/\/$/, "");
-const CLOUD_BRIDGE_KEY = process.env.APEXWALL_BRIDGE_KEY || "";
+// F-006: Cloud auto-upload config (config file, env vars override)
+const CLOUD_API_URL = (eff("apiUrl", "APEXWALL_API_URL") || "").replace(/\/$/, "");
+const CLOUD_BRIDGE_KEY = eff("bridgeKey", "APEXWALL_BRIDGE_KEY") || eff("bridgeKey", "BRIDGE_API_KEY") || "";
+const CLOUD_USER_ID = eff("bridgeUserId", "BRIDGE_USER_ID") || "";
 let cloudSessionId = null;
 let cloudSessionKey = ""; // game|car|track — new session when this changes
 let cloudCarName = "";
@@ -140,13 +202,15 @@ if (isTestMode) {
 } else {
   console.log(`  Mode: ${gameFilter ? `Dedicated [${gameFilter.toUpperCase()}]` : "Auto-Detect (all sims)"}`);
   console.log("  Listening:");
-  if (!gameFilter || gameFilter === "iracing") console.log("    - iRacing                  : Shared Memory");
-  if (!gameFilter || gameFilter === "acc") console.log("    - Assetto Corsa Competizione: Shared Memory (Python bridge)");
-  if (!gameFilter || ["ams2", "automobilista", "pcars2"].includes(gameFilter)) console.log(`    - Automobilista 2 / pCARS2 : UDP ${PORTS.AMS2}`);
-  if (!gameFilter || gameFilter === "forza") console.log(`    - Forza Motorsport/Horizon : UDP ${PORTS.FORZA}`);
-  if (!gameFilter || gameFilter === "f1") console.log(`    - F1 22 / 23 / 24 / 25     : UDP ${PORTS.F1}`);
+  const simOn = (k) => gameFilter ? true : fileConfig.sims[k] !== false;
+  if (!gameFilter || gameFilter === "iracing") { if (simOn("iracing")) console.log("    - iRacing                  : Shared Memory"); }
+  if (!gameFilter || gameFilter === "acc") { if (simOn("acc")) console.log("    - Assetto Corsa Competizione: Shared Memory (Python bridge)"); }
+  if (!gameFilter || ["ams2", "automobilista", "pcars2"].includes(gameFilter)) { if (simOn("ams2")) console.log(`    - Automobilista 2 / pCARS2 : UDP ${PORTS.AMS2}`); }
+  if (!gameFilter || gameFilter === "forza") { if (simOn("forza")) console.log(`    - Forza Motorsport/Horizon : UDP ${PORTS.FORZA}`); }
+  if (!gameFilter || gameFilter === "f1") { if (simOn("f1")) console.log(`    - F1 22 / 23 / 24 / 25     : UDP ${PORTS.F1}`); }
 }
 console.log(`  HTTP API  : http://localhost:${WS_PORT}/api/status`);
+console.log(`  Config UI : http://localhost:${WS_PORT}/config`);
 console.log(`  Lap ingest: http://localhost:${WS_PORT}/api/latest-lap.csv`);
 console.log("=================================================================\n");
 
@@ -203,16 +267,132 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({
       status: "ok",
-      version: "1.0.0",
+      version: BRIDGE_VERSION,
       activeGame,
       isReceiving,
+      uptimeSec: Math.floor((Date.now() - bootTime) / 1000),
       totalPackets: totalPacketsReceived,
       lapCounter,
       currentLapPointsCount: activeLapBuffer.length,
       hasCompletedLap: !!lastCompletedLap,
       lastLapTime: lastCompletedLap ? lastCompletedLap.lapTime : null,
       lastLapPointCount: lastCompletedLap ? lastCompletedLap.points.length : 0,
+      pttSidecar: !!pttSidecar,
+      pttMic: deviceCache.mic || null,
     }));
+    return;
+  }
+
+  // ---- Bridge config dashboard ----
+  if (req.method === "GET" && req.url === "/config") {
+    try {
+      const { CONFIG_PAGE } = require("./bridge-config-page.js");
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(CONFIG_PAGE);
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Config page unavailable: " + e.message);
+    }
+    return;
+  }
+
+  const publicConfig = () => ({
+    apiUrl: CLOUD_API_URL,
+    bridgeKey: CLOUD_BRIDGE_KEY ? "••••••••" : "",
+    bridgeUserId: CLOUD_USER_ID,
+    pttMic: eff("pttMic", "PTT_MIC"),
+    pttSpeaker: eff("pttSpeaker", "PTT_SPEAKER"),
+    pttButtons: fileConfig.pttButtons || [],
+    bridgeVoice: fileConfig.bridgeVoice !== false,
+    sims: fileConfig.sims,
+    _path: CONFIG_PATH,
+    _envOverride: {
+      apiUrl: !!process.env.APEXWALL_API_URL,
+      bridgeKey: !!(process.env.APEXWALL_BRIDGE_KEY || process.env.BRIDGE_API_KEY),
+    },
+  });
+
+  if (req.method === "GET" && req.url === "/api/config") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify(publicConfig()));
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/config") {
+    let body = "";
+    req.on("data", (c) => { body += c; if (body.length > 16384) req.destroy(); });
+    req.on("end", () => {
+      try {
+        const patch = JSON.parse(body || "{}");
+        const allowed = ["apiUrl", "bridgeKey", "bridgeUserId", "pttMic", "pttSpeaker", "pttButtons", "bridgeVoice", "sims"];
+        for (const k of allowed) {
+          if (patch[k] !== undefined) {
+            // Don't overwrite a real key with the masked placeholder
+            if (k === "bridgeKey" && patch[k] === "••••••••") continue;
+            fileConfig[k] = patch[k];
+          }
+        }
+        if (patch.sims && typeof patch.sims === "object") {
+          fileConfig.sims = { ...fileConfig.sims, ...patch.sims };
+        }
+        if (Array.isArray(patch.pttButtons)) {
+          fileConfig.pttButtons = patch.pttButtons.filter((s) => typeof s === "string");
+          // Push the map to the sidecar immediately
+          if (pttSidecar && pttSidecar.stdin) {
+            try { pttSidecar.stdin.write(JSON.stringify({ cmd: "map", buttons: fileConfig.pttButtons }) + "\n"); } catch (_e) {}
+          }
+        }
+        const ok = saveConfigFile(fileConfig);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok, config: publicConfig() }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/config/test") {
+    (async () => {
+      if (!CLOUD_API_URL) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "API URL not set" }));
+        return;
+      }
+      try {
+        const r = await fetch(`${CLOUD_API_URL}/api/health`);
+        const detail = r.ok ? `cloud reachable (HTTP ${r.status})` : `cloud returned HTTP ${r.status}`;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: r.ok, detail }));
+      } catch (e) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    })();
+    return;
+  }
+
+  if (req.method === "GET" && req.url === "/api/devices") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      sidecar: deviceCache.sidecar,
+      inputs: deviceCache.inputs,
+      outputs: deviceCache.outputs,
+      joysticks: deviceCache.joysticks,
+    }));
+    return;
+  }
+
+  if (req.method === "POST" && req.url === "/api/ptt/learn") {
+    if (pttSidecar && pttSidecar.stdin) {
+      try { pttSidecar.stdin.write(JSON.stringify({ cmd: "learn_start" }) + "\n"); } catch (_e) {}
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    } else {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "PTT sidecar not running" }));
+    }
     return;
   }
 
@@ -772,15 +952,26 @@ function startPTTSidecar() {
   }
   console.log("[PTT] Starting wheel-button PTT sidecar (pip install pygame sounddevice if it fails)...");
   try {
-    const py = spawn("python", [scriptPath], { stdio: ["pipe", "pipe", "inherit"] });
+    const py = spawn("python", [scriptPath], {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: {
+        ...process.env,
+        // Config file values feed the sidecar; explicit env vars still win.
+        PTT_MIC: process.env.PTT_MIC || fileConfig.pttMic || "",
+        PTT_SPEAKER: process.env.PTT_SPEAKER || fileConfig.pttSpeaker || "",
+      },
+    });
     pttSidecar = py;
+    deviceCache.sidecar = true;
     py.on("error", (e) => {
       console.warn(`[PTT] Sidecar failed to start: ${e.message} (is Python installed?)`);
       pttSidecar = null;
+      deviceCache.sidecar = false;
     });
     py.on("exit", (code) => {
       console.warn(`[PTT] Sidecar exited (code ${code})`);
       if (pttSidecar === py) pttSidecar = null;
+      deviceCache.sidecar = false;
     });
     const rl = readline.createInterface({ input: py.stdout });
     rl.on("line", (line) => {
@@ -802,6 +993,12 @@ function startPTTSidecar() {
         });
       } else if (msg.type === "ptt_learned" && msg.button) {
         console.log(`[PTT] Learned wheel button: ${msg.button}`);
+        // Persist to config so it survives restarts
+        if (!fileConfig.pttButtons.includes(msg.button)) {
+          fileConfig.pttButtons.push(msg.button);
+          fileConfig.pttButtons.sort();
+          saveConfigFile(fileConfig);
+        }
         broadcastMessage("ptt_learned", { button: msg.button });
       } else if (msg.type === "ptt_listening") {
         broadcastMessage("ptt_listening", { active: !!msg.active });
@@ -811,12 +1008,23 @@ function startPTTSidecar() {
           if (msg.joysticks) {
             const names = msg.joysticks.map((j) => `#${j.index} ${j.name}`).join(", ");
             console.log(`[PTT] Joysticks: ${names || "none"} | Mic: ${msg.mic || "none"}`);
+            deviceCache.joysticks = msg.joysticks;
+            if (msg.mic) deviceCache.mic = msg.mic;
           }
           if (msg.output_devices) {
             const outs = msg.output_devices.map((d) => `#${d.index} ${d.name}`).join(" | ");
             console.log(`[PTT] Output devices: ${outs || "none"} — set PTT_SPEAKER to (part of) a name to route engineer voice there`);
+            deviceCache.outputs = msg.output_devices.map((d) => ({ name: d.name }));
           }
-          if (msg.speaker) console.log(`[PTT] Engineer voice -> "${msg.speaker}"`);
+          if (msg.input_devices) {
+            deviceCache.inputs = msg.input_devices.map((d) => ({ name: d.name }));
+          }
+          if (msg.speaker) { console.log(`[PTT] Engineer voice -> "${msg.speaker}"`); deviceCache.speaker = msg.speaker; }
+          // Push the persisted button map once the sidecar is up
+          if (fileConfig.pttButtons.length && pttSidecar && pttSidecar.stdin && !startPTTSidecar._mapSent) {
+            startPTTSidecar._mapSent = true;
+            try { pttSidecar.stdin.write(JSON.stringify({ cmd: "map", buttons: fileConfig.pttButtons }) + "\n"); } catch (_e) {}
+          }
         }
         broadcastMessage("ptt_status", msg);
       }
@@ -987,7 +1195,12 @@ if (isTestMode) {
     }
   }
 
-  const want = (n) => !gameFilter || gameFilter === n;
+  // Sim enablement: --game CLI filter wins; otherwise the config file toggles apply.
+  const want = (n) => {
+    if (gameFilter) return gameFilter === n;
+    const key = { iracing: "iracing", acc: "acc", "assetto-corsa-competizione": "acc", ams2: "ams2", automobilista: "ams2", pcars2: "ams2", forza: "forza", f1: "f1" }[n] || n;
+    return fileConfig.sims[key] !== false;
+  };
 
   if (want("iracing")) startIracingReader();
   if (want("ams2") || want("automobilista") || want("pcars2"))

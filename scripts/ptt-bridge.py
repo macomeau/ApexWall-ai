@@ -148,11 +148,14 @@ def resolve_speaker():
     if sd is None:
         return None
     want = os.environ.get("PTT_SPEAKER", "").strip()
-    # Log all output devices so the user can pick a name
+    # Log all audio devices so the user can pick names
     try:
         devs = sd.query_devices()
         outs = [(i, d["name"]) for i, d in enumerate(devs) if d["max_output_channels"] > 0]
-        log_status(ok=True, output_devices=[{"index": i, "name": n} for i, n in outs])
+        ins = [(i, d["name"]) for i, d in enumerate(devs) if d["max_input_channels"] > 0]
+        log_status(ok=True,
+                   output_devices=[{"index": i, "name": n} for i, n in outs],
+                   input_devices=[{"index": i, "name": n} for i, n in ins])
     except Exception:
         pass
     if not want:
