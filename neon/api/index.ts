@@ -694,7 +694,7 @@ app.post("/api/ptt/transcribe", async (c) => {
               content: [
                 {
                   type: "text",
-                  text: "Transcribe this sim-racing driver radio message. Transcribe what you hear, including motorsport terms (apex, understeer, oversteer, trail braking, etc.). If the audio is completely silent or contains no speech at all, return exactly: [unclear]. Otherwise, provide your best transcription of the speech. Return only the transcription, no commentary.",
+                  text: "Transcribe the driver's speech in this audio. Motorsport terms may include: apex, understeer, oversteer, trail braking, brake bias, differential, etc. Provide the transcription of what is spoken. If there is no intelligible speech, return exactly: [unclear]. Return only the transcription, no commentary.",
                 },
                 { type: "audio_url", audio_url: { url: audioUrl } },
               ],

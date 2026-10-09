@@ -318,6 +318,13 @@ class Recorder:
         dur = len(audio) / self.rate
         if dur < MIN_SECONDS:
             return None
+        # Voice activity check: reject if audio is mostly silence/noise
+        # (prevents the transcriber from hallucinating on background noise)
+        rms = float(np.sqrt(np.mean(audio.astype(np.float32) ** 2)))
+        # 16-bit audio: normal speech RMS ~1000-8000; background noise < 200
+        if rms < 300:
+            log_event({"type": "ptt_audio_rejected", "reason": "too_quiet", "rms": round(rms, 1)})
+            return None
         # cap length
         max_n = int(MAX_SECONDS * self.rate)
         audio = audio[:max_n]
