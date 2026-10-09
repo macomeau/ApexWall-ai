@@ -324,7 +324,7 @@ const server = http.createServer((req, res) => {
     req.on("end", () => {
       try {
         const patch = JSON.parse(body || "{}");
-        const allowed = ["apiUrl", "bridgeKey", "bridgeUserId", "pttMic", "pttSpeaker", "pttButtons", "bridgeVoice", "sims"];
+        const allowed = ["apiUrl", "bridgeKey", "bridgeUserId", "pttMic", "pttSpeaker", "pttTtsEngine", "pttTtsFull", "pttButtons", "bridgeVoice", "sims"];
         for (const k of allowed) {
           if (patch[k] !== undefined) {
             // Don't overwrite a real key with the masked placeholder
