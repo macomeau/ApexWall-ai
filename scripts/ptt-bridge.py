@@ -295,6 +295,7 @@ def main():
     recording = False
     rec_mapped_snapshot = set()
     monitor_state = {"active": False, "last_pressed": set()}
+    map_armed = {"armed": True}  # set False on new map; requires release before trigger
 
     # Stdin reader thread (select() doesn't work on stdin under Windows)
     cmd_queue: "queue.Queue[str]" = queue.Queue()
@@ -321,6 +322,9 @@ def main():
         if cmd == "map":
             btns = msg.get("buttons") or []
             mapped = set(str(b) for b in btns)
+            # Require all mapped buttons to be released once before arming —
+            # prevents immediate trigger if the learn-press is still held.
+            map_armed["armed"] = False
             log_status(ok=True, mapped=sorted(mapped))
         elif cmd == "learn_start":
             learning = True
@@ -352,10 +356,11 @@ def main():
             pass
 
         now = time.time()
-        # Re-enumerate joysticks every 5s (hotplug)
-        if now - last_reenum > 5:
-            last_reenum = now
-            init_joysticks()
+        # NOTE: Re-enumeration disabled — joystick indices must stay stable
+        # for button mappings. Restart the bridge if devices change.
+        # if now - last_reenum > 5:
+        #     last_reenum = now
+        #     init_joysticks()
 
         pressed = poll_buttons()
 
@@ -379,7 +384,12 @@ def main():
                 log_status(ok=True, learning=False)
         elif mic_rate and mapped:
             hit = pressed & mapped
-            if hit and not recording:
+            # Arm only after all mapped buttons have been released once
+            if not map_armed["armed"]:
+                if not hit:
+                    map_armed["armed"] = True
+                    log_status(ok=True, note="PTT armed")
+            elif hit and not recording:
                 recording = True
                 rec_mapped_snapshot = set(hit)
                 recorder = Recorder(mic_rate)
