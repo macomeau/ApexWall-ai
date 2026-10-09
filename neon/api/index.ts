@@ -647,8 +647,33 @@ app.post("/api/ptt/transcribe", async (c) => {
     .split(",").map((s) => s.trim()).filter(Boolean);
   if (models.length === 0) models.push("gemini-3-flash");
 
-  const audioB64 = Buffer.from(buf).toString("base64");
+  // Upload audio to S3 and use presigned URL — the gateway's models don't
+  // accept inline base64 audio (input_audio unsupported, data URIs ignored).
+  const s3 = storageClient();
+  const audioKey = `ptt/${userId}/${Date.now()}.wav`;
+  try {
+    await s3.send(new PutObjectCommand({
+      Bucket: TELEMETRY_BUCKET,
+      Key: audioKey,
+      Body: Buffer.from(buf),
+      ContentType: "audio/wav",
+    }));
+  } catch (e: any) {
+    return c.json({ error: `S3 upload failed: ${e.message}` }, 500);
+  }
+  let audioUrl: string;
+  try {
+    audioUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: audioKey }),
+      { expiresIn: 300 } // 5 min — enough for the gateway to fetch
+    );
+  } catch (e: any) {
+    return c.json({ error: `Presign failed: ${e.message}` }, 500);
+  }
+
   let lastErr = "no models tried";
+  let transcript = "";
   for (const model of models) {
     try {
       const r = await fetch(`${base}/v1/chat/completions`, {
@@ -669,7 +694,7 @@ app.post("/api/ptt/transcribe", async (c) => {
                   type: "text",
                   text: "Transcribe this sim-racing driver radio message exactly. It may contain motorsport terms (apex, understeer, oversteer, trail braking, etc.). Return only the transcription, no commentary.",
                 },
-                { type: "input_audio", input_audio: { data: audioB64, format: "wav" } },
+                { type: "audio_url", audio_url: { url: audioUrl } },
               ],
             },
           ],
@@ -680,13 +705,20 @@ app.post("/api/ptt/transcribe", async (c) => {
         continue;
       }
       const j: any = await r.json();
-      const transcript = (j.choices?.[0]?.message?.content || "").trim();
-      if (transcript) return c.json({ transcript });
+      transcript = (j.choices?.[0]?.message?.content || "").trim();
+      if (transcript) break;
       lastErr = `model ${model}: empty transcript`;
     } catch (e: any) {
       lastErr = `model ${model}: ${e.message}`;
     }
   }
+
+  // Cleanup S3 object (best effort)
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: TELEMETRY_BUCKET, Key: audioKey }));
+  } catch (_e) {}
+
+  if (transcript) return c.json({ transcript });
   return c.json({ error: `Transcription failed: ${lastErr}` }, 502);
 });
 
