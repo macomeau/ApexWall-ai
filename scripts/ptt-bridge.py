@@ -395,7 +395,10 @@ def main():
             mapped = translated
             # Require all mapped buttons to be released once before arming —
             # prevents immediate trigger if the learn-press is still held.
-            map_armed["armed"] = False
+            # Only reset arming if the button set actually changed (not on redundant resends).
+            if mapped != map_armed.get("last_mapped"):
+                map_armed["armed"] = False
+                map_armed["last_mapped"] = set(mapped)
             log_status(ok=True, mapped=sorted(mapped))
         elif cmd == "learn_start":
             learning = True
