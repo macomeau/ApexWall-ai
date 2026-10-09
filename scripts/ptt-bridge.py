@@ -411,7 +411,7 @@ def main():
             monitor_state["active"] = False
             log_status(ok=True, monitoring=False)
 
-    log_status(ok=True, note="ptt-bridge ready; send {\"cmd\":\"map\",...}")
+    log_status(ok=True, note=f"ptt-bridge ready; TTS_ENGINE={os.environ.get('PTT_TTS_ENGINE','(unset)')} TTS_FULL={os.environ.get('PTT_TTS_FULL','(unset)')}; send {{\"cmd\":\"map\",...}}")
 
     while True:
         # Drain pending stdin commands
