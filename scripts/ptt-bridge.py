@@ -412,6 +412,13 @@ def main():
             log_status(ok=True, monitoring=False)
 
     log_status(ok=True, note=f"ptt-bridge ready; TTS_ENGINE={os.environ.get('PTT_TTS_ENGINE','(unset)')} TTS_FULL={os.environ.get('PTT_TTS_FULL','(unset)')}; send {{\"cmd\":\"map\",...}}")
+    # Debug: write TTS config to file
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ptt-debug.txt"), "w") as f:
+            f.write(f"TTS_ENGINE={os.environ.get('PTT_TTS_ENGINE','(unset)')}\n")
+            f.write(f"TTS_FULL={os.environ.get('PTT_TTS_FULL','(unset)')}\n")
+    except Exception:
+        pass
 
     while True:
         # Drain pending stdin commands
