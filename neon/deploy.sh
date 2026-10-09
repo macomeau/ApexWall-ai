@@ -53,6 +53,18 @@ if ! grep -q "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null; then
   exit 1
 fi
 
+# Bridge PTT vars (set via environment when deploying bridge support).
+# AI_MODELS must be re-applied on every deploy or it's stripped as stale.
+if [ -n "${AI_MODELS:-}" ]; then
+  echo "AI_MODELS=\"${AI_MODELS}\"" >> "$ENV_FILE"
+fi
+if [ -n "${BRIDGE_API_KEY:-}" ]; then
+  echo "BRIDGE_API_KEY=\"${BRIDGE_API_KEY}\"" >> "$ENV_FILE"
+fi
+if [ -n "${BRIDGE_USER_ID:-}" ]; then
+  echo "BRIDGE_USER_ID=\"${BRIDGE_USER_ID}\"" >> "$ENV_FILE"
+fi
+
 echo "==> deploying to Special-AI (production branch)"
 cd "$NEON_DIR"
 neon deploy --env "$ENV_FILE" --update-existing

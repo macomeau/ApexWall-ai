@@ -13,6 +13,8 @@ for (const k of [
   "NEON_AI_GATEWAY_TOKEN",
   "AI_MODELS",
   "AI_CHAT_MODELS",
+  "BRIDGE_API_KEY",
+  "BRIDGE_USER_ID",
 ]) {
   if (process.env[k]) env[k] = process.env[k]!;
 }
