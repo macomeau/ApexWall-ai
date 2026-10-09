@@ -1048,9 +1048,8 @@ function startPTTSidecar() {
             deviceCache.inputs = msg.input_devices.map((d) => ({ name: d.name }));
           }
           if (msg.speaker) { console.log(`[PTT] Engineer voice -> "${msg.speaker}"`); deviceCache.speaker = msg.speaker; }
-          // Push the persisted button map once the sidecar is up
-          if (fileConfig.pttButtons.length && pttSidecar && pttSidecar.stdin && !startPTTSidecar._mapSent) {
-            startPTTSidecar._mapSent = true;
+          // Push the persisted button map to the sidecar (idempotent — safe to resend)
+          if (fileConfig.pttButtons.length && pttSidecar && pttSidecar.stdin) {
             try { pttSidecar.stdin.write(JSON.stringify({ cmd: "map", buttons: fileConfig.pttButtons }) + "\n"); } catch (_e) {}
           }
         }
