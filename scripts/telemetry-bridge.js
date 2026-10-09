@@ -302,6 +302,8 @@ const server = http.createServer((req, res) => {
     bridgeUserId: CLOUD_USER_ID,
     pttMic: eff("pttMic", "PTT_MIC"),
     pttSpeaker: eff("pttSpeaker", "PTT_SPEAKER"),
+    pttTtsEngine: eff("pttTtsEngine", "PTT_TTS_ENGINE") || "sapi",
+    pttTtsFull: eff("pttTtsFull", "PTT_TTS_FULL") || "",
     pttButtons: fileConfig.pttButtons || [],
     bridgeVoice: fileConfig.bridgeVoice !== false,
     sims: fileConfig.sims,
