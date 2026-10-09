@@ -950,7 +950,7 @@ function startPTTSidecar() {
     console.warn(`[PTT] ptt-bridge.py not found at ${scriptPath} — voice PTT disabled`);
     return;
   }
-  console.log("[PTT] Starting wheel-button PTT sidecar (pip install pygame sounddevice if it fails)...");
+  console.log("[PTT] Starting wheel-button PTT sidecar (pip install pygame-ce sounddevice if it fails)...");
   try {
     const py = spawn("python", [scriptPath], {
       stdio: ["pipe", "pipe", "inherit"],
@@ -1210,7 +1210,7 @@ if (isTestMode) {
 
   // PTT voice sidecar — wheel-button push-to-talk for the race engineer.
   // Runs always (not game-filtered): the driver may key the mic in any sim.
-  // Requires: pip install pygame sounddevice (one-time on the rig).
+  // Requires: pip install pygame-ce sounddevice (one-time on the rig).
   startPTTSidecar();
 
   // Assetto Corsa Competizione — Python shared-memory bridge (spawns acc-bridge.py)

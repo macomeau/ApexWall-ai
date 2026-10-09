@@ -25,7 +25,7 @@ Env:
                  The bridge logs all output devices at startup so you can
                  pick the right name (e.g. your wireless headphones).
 
-Requires: pip install pygame sounddevice
+Requires: pip install pygame-ce sounddevice
 """
 import sys
 import os

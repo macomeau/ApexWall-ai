@@ -10,6 +10,7 @@ echo     - iRacing                   : Shared Memory
 echo     - Automobilista 2 / pCARS2  : UDP Port 5606
 echo     - Forza Motorsport / Horizon: UDP Port 5300
 echo     - F1 23 / 24 / 25           : UDP Port 20777
+echo     - ACC                      : Python sidecar (shared memory)
 echo.
 echo   Web dashboard: http://localhost:9001/api/status
 echo.
@@ -22,6 +23,12 @@ echo   The ApexWall Telemetry tab will detect the bridge automatically.
 echo ===================================================================
 echo.
 
-cd /d "%~dp0.."
-node scripts/telemetry-bridge.js %*
+cd /d "%~dp0"
+if not exist "ApexWall-Bridge.exe" (
+  echo ERROR: ApexWall-Bridge.exe was not found next to this launcher.
+  echo Extract the whole ApexWall-Bridge.zip into one folder and try again.
+  pause
+  exit /b 1
+)
+ApexWall-Bridge.exe %*
 pause

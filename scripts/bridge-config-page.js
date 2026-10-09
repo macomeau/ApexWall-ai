@@ -160,7 +160,7 @@ async function loadDevices() {
     });
     if (!d.sidecar) {
       micSel.disabled = spkSel.disabled = true;
-      micSel.title = spkSel.title = "PTT sidecar not running (pip install pygame sounddevice)";
+      micSel.title = spkSel.title = "PTT sidecar not running (pip install pygame-ce sounddevice)";
     }
   } catch (e) {}
 }
