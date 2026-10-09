@@ -888,11 +888,12 @@ function parseF1Packet(msg) {
 function speakViaBridge(text) {
   if (!text || typeof text !== "string") return;
   const short = text.slice(0, 600);
-  const routed = process.env.PTT_SPEAKER && pttSidecar && pttSidecar.stdin;
+  const speaker = process.env.PTT_SPEAKER || fileConfig.pttSpeaker || "";
+  const routed = speaker && pttSidecar && pttSidecar.stdin;
   if (routed) {
     try {
       pttSidecar.stdin.write(JSON.stringify({ cmd: "speak", text: short }) + "\n");
-      console.log(`[PTT] Speaking engineer reply on "${process.env.PTT_SPEAKER}" (${short.length} chars)`);
+      console.log(`[PTT] Speaking engineer reply on "${speaker}" (${short.length} chars)`);
     } catch (e) {
       console.warn(`[PTT] Sidecar speak failed: ${e.message}`);
     }
