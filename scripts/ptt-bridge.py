@@ -312,11 +312,13 @@ class Recorder:
         self.stream = None
         log_event({"type": "ptt_listening", "active": False})
         if not self.frames:
+            log_event({"type": "ptt_audio_rejected", "reason": "no_frames"})
             return None
         import numpy as np
         audio = np.concatenate(self.frames, axis=0)
         dur = len(audio) / self.rate
         if dur < MIN_SECONDS:
+            log_event({"type": "ptt_audio_rejected", "reason": "too_short", "duration": round(dur, 2)})
             return None
         # Voice activity check: reject if audio is mostly silence/noise
         # (prevents the transcriber from hallucinating on background noise)
