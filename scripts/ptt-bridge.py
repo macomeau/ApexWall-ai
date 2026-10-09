@@ -29,6 +29,9 @@ Requires: pip install pygame-ce sounddevice
 """
 import sys
 import os
+# Headless video so pygame.event.pump() works without a window — required for
+# joystick state updates. Must be set before pygame is first imported.
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import json
 import time
 import base64
@@ -59,6 +62,9 @@ def init_joysticks():
     try:
         import pygame
         if not pygame_ok:
+            # Dummy video driver (set at import) lets event.pump() run headless —
+            # required for joystick state updates.
+            pygame.display.init()
             pygame.joystick.init()
             pygame_ok = True
         # (Re)enumerate — handles hotplug between races
@@ -78,8 +84,11 @@ def init_joysticks():
         log_status(ok=False, error=f"pygame unavailable: {e}")
         return False
 
+_poll_error_logged = False
+
 def poll_buttons():
     """Return set of 'joy:btn' ids currently pressed."""
+    global _poll_error_logged
     pressed = set()
     if not pygame_ok:
         return pressed
@@ -94,8 +103,11 @@ def poll_buttons():
                         pressed.add(f"{ji}:{b}")
             except Exception:
                 pass
-    except Exception:
-        pass
+    except Exception as e:
+        # Log once — silent failures here mean "no buttons ever detected"
+        if not _poll_error_logged:
+            _poll_error_logged = True
+            log_status(ok=False, error=f"button poll failed: {e}")
     return pressed
 
 # ------------------------------------------------------------------- mic ---
