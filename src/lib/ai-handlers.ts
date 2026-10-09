@@ -278,8 +278,23 @@ try {
     }
   }
 
+  // Current time in driver's timezone (America/Moncton)
+  const now = new Date();
+  const timeStr = now.toLocaleString("en-US", {
+    timeZone: "America/Moncton",
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
   const systemPrompt = `You are the Chief Race Engineer on the pit wall for an elite sim racing driver, communicating live over the team radio and pit-lane telemetry debrief.
 Your tone is professional, direct, analytical, and supportive—modeled after premier F1 and WEC race engineers (like Peter Bonnington "Bono" or Gianpiero Lambiase "GP").
+
+Current date/time (driver's local, America/Moncton): ${timeStr}
 
 Driver's Session Data:
 ${sessionContextText}
