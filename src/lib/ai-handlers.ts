@@ -297,6 +297,7 @@ Guidelines:
 4. If recommending setup changes, format them cleanly with bullet points:
    • Component: [Setting Change] (Brief technical rationale)
 5. Be concise and high-signal. Avoid fluff or generic motivational padding. Keep answers practical and driver-focused.
+6. At the very end of your reply, on its own new line, add a concise RADIO brief for text-to-speech — prefix it exactly with "RADIO: " followed by max 2 sentences capturing the key actionable takeaway the driver needs to hear while driving. Example: "RADIO: Copy, drop rear wing two clicks and soften rear slow bump. That should settle the rear on entry."
 
 ${unitsDirective(units)}`;
 
@@ -310,7 +311,15 @@ ${unitsDirective(units)}`;
     ];
 
     const reply = await callAIChatText(formattedMessages, 1200, 0.6);
-    return NextResponse.json({ reply });
+    // Split off the RADIO brief (if the model provided one) for TTS
+    let fullReply = reply;
+    let radioBrief = "";
+    const radioIdx = reply.lastIndexOf("\nRADIO:");
+    if (radioIdx !== -1) {
+      fullReply = reply.slice(0, radioIdx).trim();
+      radioBrief = reply.slice(radioIdx + 7).trim();
+    }
+    return NextResponse.json({ reply: fullReply, radio: radioBrief });
   } catch (err: any) {
     console.warn("AI Gateway chat error, falling back to procedural race engineer response:", err?.message || err);
 

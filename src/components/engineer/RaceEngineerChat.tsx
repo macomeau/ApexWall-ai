@@ -109,13 +109,13 @@ I have your active session telemetry and chassis telemetry synced. How does the 
   };
 
   /** Shorten reply for radio and send to the bridge for Windows TTS. */
-  const speakBridgeMessage = (text: string) => {
+  const speakBridgeMessage = (text: string, radioBrief?: string) => {
     if (!bridgeVoiceEnabledRef.current) return;
     if (!bridgeWsRef.current || bridgeWsRef.current.readyState !== 1) return;
     try {
-      // Strip markdown, keep first 2 sentences for radio brevity
-      const plain = text.replace(/[*_#`>\-|[\]]/g, "").replace(/\n+/g, " ").trim();
-      const short = plain.split(/(?<=[.?!])\s+/).slice(0, 2).join(" ").slice(0, 400);
+      // Use the AI-generated radio brief if available; otherwise truncate for radio brevity
+      const plain = (radioBrief || text).replace(/[*_#`>\-|[\]]/g, "").replace(/\n+/g, " ").trim();
+      const short = radioBrief ? plain.slice(0, 600) : plain.split(/(?<=[.?!])\s+/).slice(0, 2).join(" ").slice(0, 400);
       if (!short) return;
       bridgeWsRef.current.send(JSON.stringify({ type: "ptt_speak", payload: { text: short } }));
     } catch (_e) {}
@@ -508,6 +508,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
       const contentType = res.headers.get("content-type") || "";
       const data = contentType.includes("json") ? await res.json() : { reply: await res.text() };
       const replyContent = data.reply || "Copy driver, telemetry signal interrupted. State your issue again.";
+      const radioBrief = data.radio || "";
 
       const assistantMsg: Message = {
         id: `assistant-${Date.now()}`,
@@ -518,7 +519,7 @@ I have your active session telemetry and chassis telemetry synced. How does the 
 
       setMessages((prev) => [...prev, assistantMsg]);
       speakRadioMessage(replyContent);
-      speakBridgeMessage(replyContent);
+      speakBridgeMessage(replyContent, radioBrief);
     } catch (_err) {
       const errorMsg: Message = {
         id: `assistant-${Date.now()}`,
