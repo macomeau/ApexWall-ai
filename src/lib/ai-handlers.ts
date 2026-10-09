@@ -223,7 +223,7 @@ interface ChatMessage {
 }
 
 export async function handleRaceEngineer(body: any): Promise<HandlerResult> {
-
+try {
   const {
     messages = [],
     telemetryContext,
@@ -325,6 +325,13 @@ ${unitsDirective(units)}`;
 
     return NextResponse.json({ reply: fallbackReply });
   }
+} catch (outerErr: any) {
+  // Outer catch: context building failed — return generic fallback
+  console.warn("Race engineer outer error:", outerErr?.message || outerErr);
+  return NextResponse.json({
+    reply: "Copy driver, telemetry signal interrupted. State your issue again."
+  });
+}
 }
 
 /**
