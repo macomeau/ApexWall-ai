@@ -213,12 +213,14 @@ async function jsonBody(c: any) {
 
 /** Shared guard for AI routes: rate limit + payload cap. Returns an error response or null. */
 function guardAiRoute(c: any, limiter: MemoryRateLimiter): Response | null {
-  const clientIp = getClientIp(c.req.headers as unknown as Headers);
+  const clientIp = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+    || c.req.header("x-real-ip")?.trim()
+    || "unknown";
   const { allowed } = limiter.check(clientIp);
   if (!allowed) {
     return c.json({ error: "Rate limit exceeded. Try again in a minute." }, 429);
   }
-  const contentLength = c.req.headers.get("content-length");
+  const contentLength = c.req.header("content-length");
   if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
     return c.json({ error: "Payload too large. Maximum allowed size is 32KB." }, 413);
   }
@@ -246,21 +248,16 @@ app.post("/api/analyze-telemetry", async (c) => {
 });
 
 app.post("/api/race-engineer", async (c) => {
-  try {
-    const guard = guardAiRoute(c, raceEngineerLimiter);
-    if (guard) return guard;
-    const body = await jsonBody(c);
-    if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
-    const parsed = RaceEngineerRequestSchema.safeParse(body);
-    if (!parsed.success) {
-      return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
-    }
-    const { status, json } = await handleRaceEngineer(parsed.data);
-    return c.json(json, status as any);
-  } catch (e: any) {
-    console.error("[race-engineer] route error:", e?.message, e?.stack?.split("\n").slice(0, 3).join(" | "));
-    return c.json({ error: `Debug: ${e?.message || e}` }, 500);
+  const guard = guardAiRoute(c, raceEngineerLimiter);
+  if (guard) return guard;
+  const body = await jsonBody(c);
+  if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
+  const parsed = RaceEngineerRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
   }
+  const { status, json } = await handleRaceEngineer(parsed.data);
+  return c.json(json, status as any);
 });
 
 // ---------- vault routes ----------
