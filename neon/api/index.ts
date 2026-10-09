@@ -246,16 +246,21 @@ app.post("/api/analyze-telemetry", async (c) => {
 });
 
 app.post("/api/race-engineer", async (c) => {
-  const guard = guardAiRoute(c, raceEngineerLimiter);
-  if (guard) return guard;
-  const body = await jsonBody(c);
-  if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
-  const parsed = RaceEngineerRequestSchema.safeParse(body);
-  if (!parsed.success) {
-    return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
+  try {
+    const guard = guardAiRoute(c, raceEngineerLimiter);
+    if (guard) return guard;
+    const body = await jsonBody(c);
+    if (!body) return c.json({ error: "Invalid JSON request body." }, 400);
+    const parsed = RaceEngineerRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid request.", details: parsed.error.issues.map((i) => i.message) }, 400);
+    }
+    const { status, json } = await handleRaceEngineer(parsed.data);
+    return c.json(json, status as any);
+  } catch (e: any) {
+    console.error("[race-engineer] route error:", e?.message, e?.stack?.split("\n").slice(0, 3).join(" | "));
+    return c.json({ error: `Debug: ${e?.message || e}` }, 500);
   }
-  const { status, json } = await handleRaceEngineer(parsed.data);
-  return c.json(json, status as any);
 });
 
 // ---------- vault routes ----------
