@@ -88,6 +88,13 @@ const CONFIG_PAGE = `<!DOCTYPE html>
       <select id="cfg-pttMic"><option value="">System default</option></select></div>
     <div class="row"><div><div class="lbl">Engineer voice output</div><div class="hint">Where the engineer's spoken replies play (e.g. wireless headphones).</div></div>
       <select id="cfg-pttSpeaker"><option value="">System default</option></select></div>
+    <div class="row"><div><div class="lbl">Voice engine</div><div class="hint">Piper = natural local voices (needs voice model). SAPI = built-in Windows.</div></div>
+      <select id="cfg-pttTtsEngine">
+        <option value="sapi">Windows SAPI</option>
+        <option value="piper">Piper (local neural)</option>
+      </select></div>
+    <div class="row"><div><div class="lbl">Full replies</div><div class="hint">Speak the full engineer reply instead of the shortened radio version.</div></div>
+      <div class="toggle" id="tgl-pttTtsFull" onclick="toggleTtsFull()"></div></div>
     <div class="row"><div><div class="lbl">Bridge voice replies</div><div class="hint">Speak engineer answers on the rig via Windows TTS.</div></div>
       <div class="toggle" id="tgl-bridgeVoice" onclick="toggleVoice()"></div></div>
     <div style="margin-top:14px;">
@@ -136,6 +143,8 @@ async function loadConfig() {
   $("cfg-bridgeUserId").value = cfg.bridgeUserId || "";
   $("cfg-pttMic").value = cfg.pttMic || "";
   $("cfg-pttSpeaker").value = cfg.pttSpeaker || "";
+  $("cfg-pttTtsEngine").value = cfg.pttTtsEngine || "sapi";
+  $("tgl-pttTtsFull").classList.toggle("on", cfg.pttTtsFull === "1");
   $("tgl-bridgeVoice").classList.toggle("on", cfg.bridgeVoice !== false);
   $("cfg-path").textContent = cfg._path || "";
   renderChips();
@@ -220,8 +229,17 @@ function saveCloud() {
   postConfig({ apiUrl: $("cfg-apiUrl").value.trim(), bridgeKey: $("cfg-bridgeKey").value, bridgeUserId: $("cfg-bridgeUserId").value.trim() });
 }
 function savePtt() {
-  postConfig({ pttMic: $("cfg-pttMic").value, pttSpeaker: $("cfg-pttSpeaker").value, bridgeVoice: $("tgl-bridgeVoice").classList.contains("on"), pttButtons: cfg.pttButtons || [] });
+  postConfig({
+    pttMic: $("cfg-pttMic").value,
+    pttSpeaker: $("cfg-pttSpeaker").value,
+    pttTtsEngine: $("cfg-pttTtsEngine").value,
+    pttTtsFull: $("tgl-pttTtsFull").classList.contains("on") ? "1" : "",
+    bridgeVoice: $("tgl-bridgeVoice").classList.contains("on"),
+    pttButtons: cfg.pttButtons || []
+  });
+  toast("Saved — restart bridge for voice engine changes to take effect.");
 }
+function toggleTtsFull() { $("tgl-pttTtsFull").classList.toggle("on"); }
 function saveSims() {
   const sims = {};
   document.querySelectorAll("#sim-toggles .toggle").forEach((t, i) => { sims[SIMS[i][0]] = t.classList.contains("on"); });

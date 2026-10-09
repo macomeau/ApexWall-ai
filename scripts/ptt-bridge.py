@@ -191,7 +191,7 @@ def resolve_speaker():
 _speak_lock = threading.Lock()
 
 def speak_text(text, speaker_idx):
-    """Render text to WAV via Windows SAPI, then play it on the chosen output."""
+    """Render text to WAV via Piper (if configured) or Windows SAPI, then play it."""
     if not text or sd is None:
         return
     if not _speak_lock.acquire(blocking=False):
@@ -199,21 +199,62 @@ def speak_text(text, speaker_idx):
     try:
         import subprocess
         import tempfile
-        short = text[:600]
-        b64 = base64.b64encode(short.encode("utf-16-le")).decode("ascii")
+        # PTT_TTS_FULL=1 to speak the full reply; otherwise truncate for radio brevity
+        full = os.environ.get("PTT_TTS_FULL", "").strip() == "1"
+        short = text if full else text[:600]
+        engine = os.environ.get("PTT_TTS_ENGINE", "sapi").strip().lower()
+
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         tmp_path = tmp.name
         tmp.close()
-        ps = (
-            "$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"+b64+"'));"
-            "Add-Type -AssemblyName System.Speech;"
-            "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-            "$s.Rate=1;"
-            "$s.SetOutputToWaveFile('"+tmp_path.replace("'", "''")+"');"
-            "$s.Speak($t)|Out-Null;$s.Dispose()"
-        )
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                       capture_output=True, timeout=30)
+
+        if engine == "piper":
+            # Piper TTS: binary + voice model next to the bridge, or in PATH
+            # Env: PTT_PIPER_BIN (path to piper.exe), PTT_PIPER_VOICE (path to .onnx)
+            piper_bin = os.environ.get("PTT_PIPER_BIN", "").strip()
+            voice = os.environ.get("PTT_PIPER_VOICE", "").strip()
+            if not piper_bin:
+                # Look next to this script, then in PATH
+                here = os.path.dirname(os.path.abspath(__file__))
+                for cand in [os.path.join(here, "piper", "piper.exe"),
+                             os.path.join(here, "piper.exe")]:
+                    if os.path.exists(cand):
+                        piper_bin = cand
+                        break
+            if not voice:
+                here = os.path.dirname(os.path.abspath(__file__))
+                # Pick first .onnx in piper/voices/
+                vdir = os.path.join(here, "piper", "voices")
+                if os.path.isdir(vdir):
+                    for f in os.listdir(vdir):
+                        if f.endswith(".onnx"):
+                            voice = os.path.join(vdir, f)
+                            break
+            if not piper_bin or not voice or not os.path.exists(piper_bin) or not os.path.exists(voice):
+                log_status(ok=False, error="piper not found (PTT_PIPER_BIN/PTT_PIPER_VOICE), falling back to SAPI")
+                engine = "sapi"
+            else:
+                # Piper: echo text | piper --model voice.onnx --output_file out.wav
+                proc = subprocess.run(
+                    [piper_bin, "--model", voice, "--output_file", tmp_path],
+                    input=short.encode("utf-8"),
+                    capture_output=True, timeout=60)
+                if proc.returncode != 0 or not os.path.exists(tmp_path):
+                    log_status(ok=False, error=f"piper failed: {proc.stderr.decode()[:200]}")
+                    engine = "sapi"  # fall through to SAPI
+
+        if engine == "sapi":
+            b64 = base64.b64encode(short.encode("utf-16-le")).decode("ascii")
+            ps = (
+                "$t=[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('"+b64+"'));"
+                "Add-Type -AssemblyName System.Speech;"
+                "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+                "$s.Rate=1;"
+                "$s.SetOutputToWaveFile('"+tmp_path.replace("'", "''")+"');"
+                "$s.Speak($t)|Out-Null;$s.Dispose()"
+            )
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           capture_output=True, timeout=30)
         # Play the WAV on the selected output device
         with wave.open(tmp_path, "rb") as w:
             rate = w.getframerate()

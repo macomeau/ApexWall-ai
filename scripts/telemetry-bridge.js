@@ -978,6 +978,8 @@ function startPTTSidecar() {
         // Config file values feed the sidecar; explicit env vars still win.
         PTT_MIC: process.env.PTT_MIC || fileConfig.pttMic || "",
         PTT_SPEAKER: process.env.PTT_SPEAKER || fileConfig.pttSpeaker || "",
+        PTT_TTS_ENGINE: process.env.PTT_TTS_ENGINE || fileConfig.pttTtsEngine || "",
+        PTT_TTS_FULL: process.env.PTT_TTS_FULL || fileConfig.pttTtsFull || "",
       },
     });
     pttSidecar = py;
