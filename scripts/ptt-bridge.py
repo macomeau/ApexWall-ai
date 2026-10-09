@@ -7,7 +7,7 @@ ApexWall PTT Bridge sidecar — wheel-button push-to-talk for the race engineer.
 - Talks to telemetry-bridge.js over stdin/stdout as JSON lines.
 
 Stdin commands (JSON per line):
-  {"cmd": "map", "buttons": ["0:4", "1:4"]}   # joystick_index:button_index pairs to watch
+  {"cmd": "map", "buttons": ["vJoy Device:34"]}   # joystick_name:button pairs to watch (names stable across restarts)
   {"cmd": "learn_start"}                       # capture next pressed button
   {"cmd": "learn_stop"}
 
@@ -71,12 +71,20 @@ def init_joysticks():
         joysticks = []
         joy_names = []
         count = pygame.joystick.get_count()
+        seen = {}
         for i in range(count):
             try:
                 j = pygame.joystick.Joystick(i)
                 # Note: Joystick.init() deprecated since 2.4 — constructor auto-inits
                 joysticks.append(j)
-                joy_names.append(j.get_name())
+                name = j.get_name()
+                # Ensure unique names (append #2, #3 for duplicates)
+                if name in seen:
+                    seen[name] += 1
+                    name = f"{name} #{seen[name]}"
+                else:
+                    seen[name] = 1
+                joy_names.append(name)
             except Exception:
                 pass
         return True
@@ -87,7 +95,7 @@ def init_joysticks():
 _poll_error_logged = False
 
 def poll_buttons():
-    """Return set of 'joy:btn' ids currently pressed."""
+    """Return set of 'joyname:btn' ids currently pressed (names are stable across restarts)."""
     global _poll_error_logged
     pressed = set()
     if not pygame_ok:
@@ -98,9 +106,10 @@ def poll_buttons():
         for ji, j in enumerate(joysticks):
             try:
                 nb = j.get_numbuttons()
+                name = joy_names[ji] if ji < len(joy_names) else str(ji)
                 for b in range(nb):
                     if j.get_button(b):
-                        pressed.add(f"{ji}:{b}")
+                        pressed.add(f"{name}:{b}")
             except Exception:
                 pass
     except Exception as e:
@@ -363,7 +372,20 @@ def main():
         cmd = msg.get("cmd")
         if cmd == "map":
             btns = msg.get("buttons") or []
-            mapped = set(str(b) for b in btns)
+            # Translate old index:button format to name:button for stability
+            # (indices shift on restart; names don't)
+            translated = set()
+            for b in btns:
+                s = str(b)
+                # Old format: "3:34" (all digits before colon) -> resolve index to name
+                if ":" in s:
+                    idx_part, btn_part = s.rsplit(":", 1)
+                    if idx_part.isdigit() and btn_part.isdigit():
+                        idx = int(idx_part)
+                        if 0 <= idx < len(joy_names):
+                            s = f"{joy_names[idx]}:{btn_part}"
+                translated.add(s)
+            mapped = translated
             # Require all mapped buttons to be released once before arming —
             # prevents immediate trigger if the learn-press is still held.
             map_armed["armed"] = False
