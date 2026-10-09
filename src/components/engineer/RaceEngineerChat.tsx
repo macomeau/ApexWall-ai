@@ -527,6 +527,8 @@ I have your active session telemetry and chassis telemetry synced. How does the 
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       };
       setMessages((prev) => [...prev, errorMsg]);
+      speakRadioMessage(errorMsg.content);
+      speakBridgeMessage(errorMsg.content);
     } finally {
       setIsLoading(false);
     }

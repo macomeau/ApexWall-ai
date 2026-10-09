@@ -58,6 +58,9 @@ fi
 if [ -n "${AI_MODELS:-}" ]; then
   echo "AI_MODELS=\"${AI_MODELS}\"" >> "$ENV_FILE"
 fi
+if [ -n "${AI_CHAT_MODELS:-}" ]; then
+  echo "AI_CHAT_MODELS=\"${AI_CHAT_MODELS}\"" >> "$ENV_FILE"
+fi
 if [ -n "${BRIDGE_API_KEY:-}" ]; then
   echo "BRIDGE_API_KEY=\"${BRIDGE_API_KEY}\"" >> "$ENV_FILE"
 fi
