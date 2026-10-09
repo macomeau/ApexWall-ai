@@ -296,6 +296,7 @@ def main():
     rec_mapped_snapshot = set()
     monitor_state = {"active": False, "last_pressed": set()}
     map_armed = {"armed": True}  # set False on new map; requires release before trigger
+    learn_baseline = {"pressed": set()}  # buttons already down when learn starts (ignore stuck)
 
     # Stdin reader thread (select() doesn't work on stdin under Windows)
     cmd_queue: "queue.Queue[str]" = queue.Queue()
@@ -329,6 +330,8 @@ def main():
         elif cmd == "learn_start":
             learning = True
             learn_deadline = time.time() + 15
+            # Baseline: ignore buttons already pressed (stuck) — only learn NEW presses
+            learn_baseline["pressed"] = set(poll_buttons())
             log_status(ok=True, learning=True, note="press a wheel button now")
         elif cmd == "learn_stop":
             learning = False
@@ -378,10 +381,13 @@ def main():
                 learning = False
                 log_status(ok=True, learning=False, note="learn timeout — no button press detected")
             elif pressed:
-                btn = sorted(pressed)[0]
-                learning = False
-                log_event({"type": "ptt_learned", "button": btn})
-                log_status(ok=True, learning=False)
+                # Only consider NEWLY pressed buttons (ignore stuck baseline)
+                new_pressed = pressed - learn_baseline["pressed"]
+                if new_pressed:
+                    btn = sorted(new_pressed)[0]
+                    learning = False
+                    log_event({"type": "ptt_learned", "button": btn})
+                    log_status(ok=True, learning=False)
         elif mic_rate and mapped:
             hit = pressed & mapped
             # Arm only after all mapped buttons have been released once
