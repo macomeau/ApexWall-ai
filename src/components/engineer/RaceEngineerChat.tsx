@@ -162,7 +162,9 @@ I have your active session telemetry and chassis telemetry synced. How does the 
         try {
           const data = JSON.parse(event.data);
           if (data.type === "ptt_transcript" && data.payload?.text) {
-            const transcript = String(data.payload.text);
+            const transcript = String(data.payload.text).trim();
+            // Skip unclear/hallucinated transcriptions
+            if (!transcript || transcript === "[unclear]") return;
             setInput(transcript);
             handleSendMessage(transcript);
           } else if (data.type === "ptt_learned" && data.payload?.button) {
