@@ -735,7 +735,7 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
                     }`}
                   >
                     {currentHoverPoint.timeDelta > 0 ? "+" : ""}
-                    {currentHoverPoint.timeDelta.toFixed(3)}s
+                    {(currentHoverPoint.timeDelta ?? 0).toFixed(3)}s
                   </span>
                 </div>
               )}
@@ -788,7 +788,7 @@ export const TrackMap2D: React.FC<TrackMap2DProps> = ({
                   className={activeCorner.timeDelta <= 0 ? "text-emerald" : "text-rose"}
                 >
                   Δt: {activeCorner.timeDelta > 0 ? "+" : ""}
-                  {activeCorner.timeDelta.toFixed(3)}s
+                  {(activeCorner.timeDelta ?? 0).toFixed(3)}s
                 </span>
               )}
             </div>

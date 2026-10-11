@@ -252,10 +252,10 @@ export const TelemetryChart: React.FC<TelemetryChartProps> = ({ points, corners 
   const fmtVal = (p: TelemetryPoint, key: ChannelKey): string => {
     switch (key) {
       case "speed": return fmt.speed(p.speed, 0);
-      case "throttle": return `${Math.round(p.throttle)}%`;
-      case "brake": return `${Math.round(p.brake)}%`;
-      case "steer": return `${p.steer.toFixed(1)}°`;
-      case "latG": return `${p.latG.toFixed(2)}G`;
+      case "throttle": return `${Math.round(p.throttle ?? 0)}%`;
+      case "brake": return `${Math.round(p.brake ?? 0)}%`;
+      case "steer": return `${(p.steer ?? 0).toFixed(1)}°`;
+      case "latG": return `${(p.latG ?? 0).toFixed(2)}G`;
     }
   };
 

@@ -330,7 +330,7 @@ export default function CockpitDDUPage() {
               }`}
             >
               <span>{frame.delta <= 0 ? "" : "+"}</span>
-              <span>{frame.delta.toFixed(2)}</span>
+              <span>{(frame.delta ?? 0).toFixed(2)}</span>
             </div>
 
             {/* Lap Timer & Lap Counter */}
@@ -416,11 +416,11 @@ export default function CockpitDDUPage() {
             <div className="border-t border-white/10 pt-2 sm:pt-3 flex justify-between text-xs font-mono text-slate-300">
               <div>
                 <span className="text-slate-500">LAT G: </span>
-                <span className="font-bold">{frame.latG.toFixed(2)}</span>
+                <span className="font-bold">{(frame.latG ?? 0).toFixed(2)}</span>
               </div>
               <div>
                 <span className="text-slate-500">LONG G: </span>
-                <span className="font-bold">{frame.longG.toFixed(2)}</span>
+                <span className="font-bold">{(frame.longG ?? 0).toFixed(2)}</span>
               </div>
             </div>
           </div>
