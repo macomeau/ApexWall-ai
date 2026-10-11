@@ -201,11 +201,17 @@ export default function CockpitDDUPage() {
 
   // Thermal color resolver
   const getTempColor = (t: number) => {
+    if (!isSaneTemp(t)) return "text-slate-500 bg-slate-500/10 border-slate-500/30";
     if (t < 75) return "text-blue-400 bg-blue-500/10 border-blue-500/30";
     if (t > 102) return "text-red-400 bg-red-500/20 border-red-500/50 animate-pulse";
     if (t > 96) return "text-amber-400 bg-amber-500/15 border-amber-500/40";
     return "text-emerald-400 bg-emerald-500/10 border-emerald-500/30";
   };
+
+  // Sanity check for telemetry values — iRacing sometimes returns garbage
+  // (uninitialized memory) like 2e+30 for tyre temps
+  const isSaneTemp = (t: number) => typeof t === "number" && isFinite(t) && t > -50 && t < 200;
+  const fmtTemp = (t: number) => isSaneTemp(t) ? `${Math.round(t)}°C` : "--";
 
   return (
     <div className="min-h-screen bg-black text-white select-none flex flex-col justify-between overflow-hidden font-sans p-2 sm:p-4">
@@ -386,28 +392,28 @@ export default function CockpitDDUPage() {
               {/* Front Left */}
               <div className={`p-2 rounded border font-mono ${getTempColor(frame.tyreTemps.FL)}`}>
                 <div className="text-[9px] text-slate-400">FL</div>
-                <div className="text-lg sm:text-2xl font-bold">{frame.tyreTemps.FL}°C</div>
+                <div className="text-lg sm:text-2xl font-bold">{fmtTemp(frame.tyreTemps.FL)}</div>
                 <div className="text-[10px] text-slate-400">{frame.tyrePressures.FL} psi</div>
               </div>
 
               {/* Front Right */}
               <div className={`p-2 rounded border font-mono ${getTempColor(frame.tyreTemps.FR)}`}>
                 <div className="text-[9px] text-slate-400">FR</div>
-                <div className="text-lg sm:text-2xl font-bold">{frame.tyreTemps.FR}°C</div>
+                <div className="text-lg sm:text-2xl font-bold">{fmtTemp(frame.tyreTemps.FR)}</div>
                 <div className="text-[10px] text-slate-400">{frame.tyrePressures.FR} psi</div>
               </div>
 
               {/* Rear Left */}
               <div className={`p-2 rounded border font-mono ${getTempColor(frame.tyreTemps.RL)}`}>
                 <div className="text-[9px] text-slate-400">RL</div>
-                <div className="text-lg sm:text-2xl font-bold">{frame.tyreTemps.RL}°C</div>
+                <div className="text-lg sm:text-2xl font-bold">{fmtTemp(frame.tyreTemps.RL)}</div>
                 <div className="text-[10px] text-slate-400">{frame.tyrePressures.RL} psi</div>
               </div>
 
               {/* Rear Right */}
               <div className={`p-2 rounded border font-mono ${getTempColor(frame.tyreTemps.RR)}`}>
                 <div className="text-[9px] text-slate-400">RR</div>
-                <div className="text-lg sm:text-2xl font-bold">{frame.tyreTemps.RR}°C</div>
+                <div className="text-lg sm:text-2xl font-bold">{fmtTemp(frame.tyreTemps.RR)}</div>
                 <div className="text-[10px] text-slate-400">{frame.tyrePressures.RR} psi</div>
               </div>
             </div>
