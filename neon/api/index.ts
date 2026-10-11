@@ -422,6 +422,8 @@ app.post("/api/sessions/:id/laps", async (c) => {
   if (!body || typeof body.lap_number !== "number") return c.json({ error: "Invalid lap payload" }, 400);
   const ch = body.channels ?? {};
   const arr = (v: any) => (Array.isArray(v) ? v : null);
+  // sector_valid is NOT NULL with default '{t,t,t}' — must provide a value, not null
+  const sectorValid = body.sector_valid ?? [true, true, true];
   await sql`
     INSERT INTO lap_telemetry
       (session_id, user_id, lap_number, lap_time, is_valid, is_out_lap, is_in_lap,
@@ -430,7 +432,7 @@ app.post("/api/sessions/:id/laps", async (c) => {
     VALUES
       (${sid}, ${userId}, ${body.lap_number}, ${body.lap_time ?? null},
        ${body.is_valid ?? true}, ${body.is_out_lap ?? false}, ${body.is_in_lap ?? false},
-       ${body.sector_times ?? null}, ${body.sector_valid ?? null},
+       ${body.sector_times ?? null}, ${sectorValid},
        ${arr(ch.speed)}, ${arr(ch.throttle)}, ${arr(ch.brake)}, ${arr(ch.steer)}, ${arr(ch.gear)},
        ${arr(ch.rpm)}, ${arr(ch.lat_g)}, ${arr(ch.long_g)}, ${arr(ch.dist)},
        ${body.sample_rate ?? null}, ${body.sample_count ?? null},
