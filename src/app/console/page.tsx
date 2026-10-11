@@ -2,6 +2,7 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
+import { SessionProvider } from "@/components/session/SessionContext";
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {error: Error | null}> {
   constructor(props: {children: React.ReactNode}) {
@@ -32,8 +33,10 @@ const PitwallConsole = dynamic(
 
 export default function ConsolePage() {
   return (
-    <ErrorBoundary>
-      <PitwallConsole />
-    </ErrorBoundary>
+    <SessionProvider>
+      <ErrorBoundary>
+        <PitwallConsole />
+      </ErrorBoundary>
+    </SessionProvider>
   );
 }
