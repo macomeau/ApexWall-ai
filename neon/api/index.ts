@@ -415,6 +415,7 @@ app.post("/api/sessions/:id/laps", async (c) => {
   const userId = await getIngestUserId(c);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const sid = c.req.param("id");
+  try {
   const sess = (await sql`SELECT id FROM sessions WHERE id = ${sid} AND user_id = ${userId}`) as any[];
   if (sess.length === 0) return c.json({ error: "Session not found" }, 404);
   const body = await c.req.json().catch(() => null);
@@ -451,6 +452,10 @@ app.post("/api/sessions/:id/laps", async (c) => {
     WHERE id = ${sid}
   `;
   return c.json({ ok: true });
+  } catch (e: any) {
+    console.error("[lap-upload] SQL error:", e?.message || e);
+    return c.json({ error: `Lap upload failed: ${e?.message || e}` }, 500);
+  }
 });
 
 import { computeDelta, theoreticalBest } from "../../src/lib/delta";
