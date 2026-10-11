@@ -14,6 +14,24 @@ interface SetupGeneratorProps {
   onLoadingChange: (loading: boolean) => void;
   onSetupGenerated?: (setup: any) => void;
   onDiscussWithEngineer?: () => void;
+  onSessionChange?: (session: { car: string; track: string; game?: string }) => void;
+  telemetryContext?: any;
+  baselineSetup?: any;
+  initialValues?: {
+    game?: string;
+    car?: string;
+    track?: string;
+    sessionType?: string;
+    weather?: string;
+    trackTemp?: string;
+    airTemp?: string;
+    tyreCompound?: string;
+    fuelLoad?: string;
+    handlingIssue?: string;
+    driverStyle?: string;
+    telemetryContext?: any;
+    baselineSetup?: any;
+  };
 }
 
 const loadingMessages = [
@@ -29,6 +47,10 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
   onLoadingChange,
   onSetupGenerated,
   onDiscussWithEngineer,
+  onSessionChange,
+  telemetryContext,
+  baselineSetup,
+  initialValues,
 }) => {
   // Session spec is shared with the Telemetry tab and persisted — fill once, use everywhere.
   const {

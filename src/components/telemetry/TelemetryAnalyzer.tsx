@@ -83,6 +83,8 @@ interface TelemetryAnalyzerProps {
   }) => void;
   onTelemetryAnalyzed?: (result: TelemetryAnalysisResult, file: ParsedTelemetryFile | null) => void;
   onDiscussWithEngineer?: () => void;
+  onSessionChange?: (session: { car: string; track: string; game?: string }) => void;
+  initialParsedTelemetry?: ParsedTelemetryFile | null;
 }
 
 const telLoadingMessages = [
@@ -112,6 +114,8 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
   onApplyToSetup,
   onTelemetryAnalyzed,
   onDiscussWithEngineer,
+  onSessionChange,
+  initialParsedTelemetry,
 }) => {
   // Session & Vehicle Spec — shared across tabs (Setup, Strategy) and persisted.
   // Set it once here and the Setup tab picks it up automatically.
@@ -798,6 +802,12 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
     setSaveState("idle");
     processParsedTelemetry(lap);
   };
+
+  useEffect(() => {
+    if (initialParsedTelemetry) {
+      processParsedTelemetry(initialParsedTelemetry);
+    }
+  }, [initialParsedTelemetry]);
 
   const handleFileUpload = async (file: File) => {
     if (file.name.toLowerCase().endsWith(".duckdb")) {
