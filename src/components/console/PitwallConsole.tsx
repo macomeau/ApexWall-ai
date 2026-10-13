@@ -459,6 +459,82 @@ export const PitwallConsole: React.FC = () => {
     >
       <style>{`
         ${ACT_CSS}
+
+        /* Balanced Sweet Spot Sidepanels: 218px & 268px for optimal 16:9 ratio */
+        .act-root.act-sb-on {
+          --act-sbw: 218px !important;
+        }
+        .act-root.act-pn-on {
+          --act-pnw: 268px !important;
+        }
+        .act-side-in {
+          width: 218px !important;
+        }
+        .act-panel-in {
+          width: 268px !important;
+        }
+
+        /* 16:9 Center Stage Geometry */
+        .act-main {
+          display: flex !important;
+          flex-direction: column !important;
+          min-width: 0 !important;
+          min-height: 0 !important;
+          height: 100% !important;
+          overflow: hidden !important;
+        }
+        .act-custom-workspace {
+          flex: 1 1 0% !important;
+          min-height: 0 !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          padding: 8px 12px !important;
+          background: var(--act-surface) !important;
+          color: var(--act-ink) !important;
+        }
+        .act-stage-16-9 {
+          width: 100% !important;
+          max-width: calc((100svh - 50px) * (16 / 9)) !important;
+          margin: 0 auto !important;
+        }
+
+        /* Responsive workbench form column: 290px instead of 440px */
+        .act-custom-workspace .layout {
+          display: grid !important;
+          grid-template-columns: minmax(260px, 310px) minmax(0, 1fr) !important;
+          gap: 12px !important;
+        }
+        @media (max-width: 1150px) {
+          .act-custom-workspace .layout {
+            grid-template-columns: 1fr !important;
+          }
+        }
+
+        /* Sleek sidepanel typography and micro-spacing */
+        .act-side-head {
+          padding: 8px 10px 4px 10px !important;
+        }
+        .act-search {
+          height: 28px !important;
+          margin: 2px 6px 6px !important;
+          padding: 0 6px 0 8px !important;
+        }
+        .act-search input {
+          font-size: 11px !important;
+        }
+        .act-sess-btn {
+          padding: 5px 8px !important;
+        }
+        .act-sess-title {
+          font-size: 11px !important;
+        }
+        .act-sess-status {
+          font-size: 9.5px !important;
+        }
+        .act-panel-in {
+          font-size: 12px !important;
+        }
+
         @keyframes act-pulse-param {
           0%, 100% {
             outline: 2px solid var(--act-ok);
@@ -629,6 +705,33 @@ export const PitwallConsole: React.FC = () => {
             </svg>
             <span>Bridge Agent</span>
           </Link>
+
+          {/* 16:9 Widescreen Focus Mode Toggle */}
+          <button
+            type="button"
+            className="act-action-pill"
+            style={{
+              background: (!isSidebarOpen && !isInspectorOpen) ? "color-mix(in srgb, var(--act-ok) 22%, var(--act-sunk))" : undefined,
+              borderColor: (!isSidebarOpen && !isInspectorOpen) ? "var(--act-ok)" : undefined,
+              color: (!isSidebarOpen && !isInspectorOpen) ? "var(--act-ok)" : undefined,
+            }}
+            onClick={() => {
+              if (isSidebarOpen || isInspectorOpen) {
+                setIsSidebarOpen(false);
+                setIsInspectorOpen(false);
+              } else {
+                setIsSidebarOpen(true);
+                setIsInspectorOpen(true);
+              }
+            }}
+            title="16:9 Cinema Focus (Collapse both sidepanels for full widescreen view)"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+              <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+            <span>16:9 {!isSidebarOpen && !isInspectorOpen ? "Full" : "Focus"}</span>
+          </button>
 
           <button
             type="button"
@@ -802,8 +905,8 @@ export const PitwallConsole: React.FC = () => {
               }}
               onClick={() => fileInputRef.current?.click()}
               style={{
-                margin: "4px 12px 10px",
-                padding: "10px",
+                margin: "4px 8px 10px",
+                padding: "8px 10px",
                 borderRadius: "8px",
                 border: isDragging ? "1.5px dashed var(--act-ink)" : "1px dashed var(--act-rule)",
                 background: isDragging
@@ -813,7 +916,7 @@ export const PitwallConsole: React.FC = () => {
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: "4px",
+                gap: "3px",
                 cursor: "pointer",
                 transition: "all 0.15s ease",
               }}
@@ -831,7 +934,7 @@ export const PitwallConsole: React.FC = () => {
                 }}
                 style={{ display: "none" }}
               />
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--act-faint)" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--act-faint)" }}>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                 <polyline points="17 8 12 3 7 8"></polyline>
                 <line x1="12" y1="3" x2="12" y2="15"></line>
@@ -839,32 +942,92 @@ export const PitwallConsole: React.FC = () => {
               <span style={{ fontSize: "11px", fontFamily: "var(--act-mono)", color: "var(--act-ink)", fontWeight: 600 }}>
                 {isDragging ? "Drop Telemetry Lap" : "+ Ingest MoTeC / CSV"}
               </span>
-              <span style={{ fontSize: "10px", color: "var(--act-faint)" }}>
+              <span style={{ fontSize: "9.5px", color: "var(--act-faint)" }}>
                 Drop .csv or click to browse
               </span>
             </div>
 
             {/* Stint List */}
-            <ul className="act-sessions" style={{ flex: 1 }}>
+            <ul className="act-sessions" style={{ flex: 1, padding: "0 4px" }}>
               {filteredStints.map((s) => {
                 const isActive = s.id === activeStintId;
                 return (
-                  <li key={s.id} className={`act-sess ${isActive ? "act-sess-on" : ""}`}>
+                  <li key={s.id} className={`act-sess ${isActive ? "act-sess-on" : ""}`} style={{ marginBottom: "2px" }}>
                     <button
                       type="button"
                       className="act-sess-btn"
                       onClick={() => handleSelectStint(s)}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "2px",
+                        width: "100%",
+                        textAlign: "left",
+                        background: isActive ? "color-mix(in srgb, var(--act-ink) 8%, transparent)" : undefined,
+                        borderLeft: isActive ? "3px solid var(--act-ok)" : "3px solid transparent",
+                        transition: "all 0.15s ease",
+                      }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                        <span className="act-sess-title" style={{ fontWeight: isActive ? 800 : 600 }}>{s.title}</span>
-                        <span style={{ fontFamily: "var(--act-mono)", fontSize: "11px", color: "var(--act-ink)" }}>
+                      {/* Row 1: Stint Title & Lap Time (Never collide) */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", width: "100%" }}>
+                        <span
+                          style={{
+                            fontSize: "11.5px",
+                            fontWeight: isActive ? 700 : 600,
+                            color: "var(--act-ink)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                          title={s.title}
+                        >
+                          {s.title}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: "var(--act-mono)",
+                            fontSize: "10.5px",
+                            fontWeight: 700,
+                            color: isActive ? "var(--act-ok)" : "var(--act-muted)",
+                            flexShrink: 0,
+                          }}
+                        >
                           {s.lapTime}
                         </span>
                       </div>
-                      <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "3px" }}>
-                        <span className="act-chip" style={{ fontSize: "10px" }}>{s.tag}</span>
-                        <span style={{ fontSize: "11px", color: "var(--act-faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {s.car.split(" ")[0]}
+
+                      {/* Row 2: Car model & Anomaly Tag */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px", width: "100%", marginTop: "2px" }}>
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            color: "var(--act-faint)",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                            minWidth: 0,
+                          }}
+                        >
+                          {s.car.split(" ")[0]} {s.car.split(" ")[1] || ""}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "9px",
+                            padding: "1px 5px",
+                            borderRadius: "4px",
+                            background: isActive ? "color-mix(in srgb, var(--act-ok) 15%, transparent)" : "var(--act-sunk)",
+                            border: isActive ? "1px solid color-mix(in srgb, var(--act-ok) 35%, transparent)" : "1px solid var(--act-rule)",
+                            color: isActive ? "var(--act-ok)" : "var(--act-muted)",
+                            flexShrink: 0,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {s.tag}
                         </span>
                       </div>
                     </button>
@@ -874,13 +1037,13 @@ export const PitwallConsole: React.FC = () => {
             </ul>
 
             {/* Pitwall Engineering Crew Badge */}
-            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--act-rule)", background: "color-mix(in srgb, var(--act-sunk) 40%, transparent)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "var(--act-ok)" }}></span>
-                <span className="act-cap" style={{ color: "var(--act-ink)" }}>Pitwall Live</span>
+            <div style={{ padding: "10px 12px", borderTop: "1px solid var(--act-rule)", background: "color-mix(in srgb, var(--act-sunk) 40%, transparent)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "var(--act-ok)" }}></span>
+                <span className="act-cap" style={{ color: "var(--act-ink)", fontSize: "9.5px" }}>Pitwall Live</span>
               </div>
-              <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--act-muted)", lineHeight: 1.4 }}>
-                Chief Engineer & Aerodynamicist active. MoTeC telemetry bridge standing by.
+              <p style={{ margin: "3px 0 0", fontSize: "10px", color: "var(--act-muted)", lineHeight: 1.35 }}>
+                Chief Engineer active · Bridge standing by
               </p>
             </div>
           </div>
@@ -890,97 +1053,99 @@ export const PitwallConsole: React.FC = () => {
             CENTER MAIN STAGE: THE WORKBENCH
             ----------------------------------------------------------------------- */}
         <main className="act-main" style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
-          <div className="act-custom-workspace" style={{ padding: "14px 18px" }}>
-            {activeTab === "telemetry" && (
-              <TelemetryAnalyzer
-                initialParsedTelemetry={lastTelemetryFile}
-                onLoadingChange={() => {}}
-                onApplyToSetup={handleApplyToSetup}
-                onTelemetryAnalyzed={(res, file) => {
-                  setLastTelemetryResult(res);
-                  setLastTelemetryFile(file);
-                  if (res.lapComparison?.driverLapTime) {
-                    setStore((prev) => ({
-                      ...prev,
-                      telemetryLapTime: { value: res.lapComparison.driverLapTime, kind: "observed" },
-                    }));
+          <div className="act-custom-workspace">
+            <div className="act-stage-16-9">
+              {activeTab === "telemetry" && (
+                <TelemetryAnalyzer
+                  initialParsedTelemetry={lastTelemetryFile}
+                  onLoadingChange={() => {}}
+                  onApplyToSetup={handleApplyToSetup}
+                  onTelemetryAnalyzed={(res, file) => {
+                    setLastTelemetryResult(res);
+                    setLastTelemetryFile(file);
+                    if (res.lapComparison?.driverLapTime) {
+                      setStore((prev) => ({
+                        ...prev,
+                        telemetryLapTime: { value: res.lapComparison.driverLapTime, kind: "observed" },
+                      }));
+                    }
+                  }}
+                  onDiscussWithEngineer={() => {
+                    setIsInspectorOpen(true);
+                    setInspectorView("engineer");
+                  }}
+                  onSessionChange={(s) => {
+                    if (s.car) setSessionCar(s.car);
+                    if (s.track) setSessionTrack(s.track);
+                    if (s.game) setSessionGame(s.game);
+                  }}
+                />
+              )}
+
+              {activeTab === "setup" && (
+                <SetupGenerator
+                  initialValues={setupInitialValues}
+                  telemetryContext={
+                    setupInitialValues?.telemetryContext ||
+                    (lastTelemetryFile
+                      ? {
+                          hasTelemetry: true,
+                          trailBrakingScore: lastTelemetryFile.trailBrakingScore,
+                          throttleSmoothness: lastTelemetryFile.throttleSmoothness,
+                          steeringScrub: lastTelemetryFile.steeringScrub,
+                          maxLatG: lastTelemetryFile.maxLatG,
+                          maxDecelG: lastTelemetryFile.maxDecelG,
+                          topSpeed: lastTelemetryFile.topSpeed,
+                          minSpeed: lastTelemetryFile.minSpeed,
+                          lapTime: lastTelemetryFile.lapTime,
+                          tyres: lastTelemetryFile.tyreStats,
+                          phaseBalance: lastTelemetryFile.phaseBalance,
+                          tyreOptimization: lastTelemetryFile.tyreOptimization,
+                          driverVsCar: lastTelemetryFile.driverVsCar,
+                          gripUtilization: lastTelemetryResult?.frictionCircle?.gripUtilizationPct,
+                        }
+                      : undefined)
                   }
-                }}
-                onDiscussWithEngineer={() => {
-                  setIsInspectorOpen(true);
-                  setInspectorView("engineer");
-                }}
-                onSessionChange={(s) => {
-                  if (s.car) setSessionCar(s.car);
-                  if (s.track) setSessionTrack(s.track);
-                  if (s.game) setSessionGame(s.game);
-                }}
-              />
-            )}
+                  baselineSetup={lastGeneratedSetup ? { sections: lastGeneratedSetup.sections } : undefined}
+                  onLoadingChange={() => {}}
+                  onSetupGenerated={handleSetupGenerated}
+                  onDiscussWithEngineer={() => {
+                    setIsInspectorOpen(true);
+                    setInspectorView("engineer");
+                  }}
+                  onSessionChange={(s) => {
+                    if (s.car) setSessionCar(s.car);
+                    if (s.track) setSessionTrack(s.track);
+                    if (s.game) setSessionGame(s.game);
+                  }}
+                />
+              )}
 
-            {activeTab === "setup" && (
-              <SetupGenerator
-                initialValues={setupInitialValues}
-                telemetryContext={
-                  setupInitialValues?.telemetryContext ||
-                  (lastTelemetryFile
-                    ? {
-                        hasTelemetry: true,
-                        trailBrakingScore: lastTelemetryFile.trailBrakingScore,
-                        throttleSmoothness: lastTelemetryFile.throttleSmoothness,
-                        steeringScrub: lastTelemetryFile.steeringScrub,
-                        maxLatG: lastTelemetryFile.maxLatG,
-                        maxDecelG: lastTelemetryFile.maxDecelG,
-                        topSpeed: lastTelemetryFile.topSpeed,
-                        minSpeed: lastTelemetryFile.minSpeed,
-                        lapTime: lastTelemetryFile.lapTime,
-                        tyres: lastTelemetryFile.tyreStats,
-                        phaseBalance: lastTelemetryFile.phaseBalance,
-                        tyreOptimization: lastTelemetryFile.tyreOptimization,
-                        driverVsCar: lastTelemetryFile.driverVsCar,
-                        gripUtilization: lastTelemetryResult?.frictionCircle?.gripUtilizationPct,
-                      }
-                    : undefined)
-                }
-                baselineSetup={lastGeneratedSetup ? { sections: lastGeneratedSetup.sections } : undefined}
-                onLoadingChange={() => {}}
-                onSetupGenerated={handleSetupGenerated}
-                onDiscussWithEngineer={() => {
-                  setIsInspectorOpen(true);
-                  setInspectorView("engineer");
-                }}
-                onSessionChange={(s) => {
-                  if (s.car) setSessionCar(s.car);
-                  if (s.track) setSessionTrack(s.track);
-                  if (s.game) setSessionGame(s.game);
-                }}
-              />
-            )}
-
-            {activeTab === "strategy" && (
-              <StrategyTools
-                onApplyPressuresToSetup={handleApplyPressures}
-                onApplyFuelToSetup={handleApplyFuel}
-                activeCar={sessionCar || setupInitialValues?.car}
-                activeTrack={sessionTrack || setupInitialValues?.track}
-              />
-            )}
-
-            {activeTab === "live" && <LiveTelemetryHUD />}
-
-            {activeTab === "engineer" && (
-              <div style={{ height: "calc(100svh - 90px)" }}>
-                <RaceEngineerChat
-                  currentSetup={lastGeneratedSetup}
-                  telemetryResult={lastTelemetryResult}
-                  parsedTelemetry={lastTelemetryFile}
+              {activeTab === "strategy" && (
+                <StrategyTools
+                  onApplyPressuresToSetup={handleApplyPressures}
+                  onApplyFuelToSetup={handleApplyFuel}
                   activeCar={sessionCar || setupInitialValues?.car}
                   activeTrack={sessionTrack || setupInitialValues?.track}
-                  onApplyAdjustmentToSetup={(advice) => handleApplyAdviceToSetup(advice)}
-                  onSwitchToSetup={() => setActiveTab("setup")}
                 />
-              </div>
-            )}
+              )}
+
+              {activeTab === "live" && <LiveTelemetryHUD />}
+
+              {activeTab === "engineer" && (
+                <div style={{ height: "calc(100svh - 90px)" }}>
+                  <RaceEngineerChat
+                    currentSetup={lastGeneratedSetup}
+                    telemetryResult={lastTelemetryResult}
+                    parsedTelemetry={lastTelemetryFile}
+                    activeCar={sessionCar || setupInitialValues?.car}
+                    activeTrack={sessionTrack || setupInitialValues?.track}
+                    onApplyAdjustmentToSetup={(advice) => handleApplyAdviceToSetup(advice)}
+                    onSwitchToSetup={() => setActiveTab("setup")}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </main>
 
