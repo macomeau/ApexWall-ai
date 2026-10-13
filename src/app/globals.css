@@ -8,19 +8,19 @@
    ========================================================================== */
 
 :root {
-  /* Surfaces (Porsche Precision Titanium Slate) */
-  --bg-base: #090C14;
-  --bg-surface: #0E1320;
-  --bg-surface-elevated: #151D2E;
-  --bg-surface-hover: #1A2438;
-  --bg-inset: #090D17;
-  --bg-inset-hover: #0D1220;
+  /* Surfaces (Locode Natural Muted Neutrals — backported from upstream 14b0073) */
+  --bg-base: #0c0e12;
+  --bg-surface: #13171f;
+  --bg-surface-elevated: #181d26;
+  --bg-surface-hover: #1f2530;
+  --bg-inset: #1a202c;
+  --bg-inset-hover: #212938;
 
-  /* Restrained, Non-Distracting Hairline Borders */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(59, 130, 246, 0.25);
-  --border-accent: #3B82F6;
+  /* Frosted Hairline Glass Borders */
+  --border-subtle: rgba(241, 245, 249, 0.08);
+  --border-default: rgba(241, 245, 249, 0.12);
+  --border-strong: rgba(212, 163, 115, 0.35);
+  --border-accent: #d4a373;
 
   /* Glare-Free Soft Typography */
   --text-primary: #F1F5F9;
@@ -28,18 +28,24 @@
   --text-muted: #64748B;
   --text-dim: #475569;
 
-  /* Porsche Precision Racing Cobalt Accents */
-  --accent-blue: #3B82F6;
-  --accent-blue-hover: #2563EB;
-  --accent-blue-subtle: rgba(59, 130, 246, 0.12);
+  /* Locode Golden Sand & Desert Terracotta Accents */
+  --accent-blue: #d4a373;
+  --accent-blue-hover: #e2b88e;
+  --accent-blue-subtle: rgba(212, 163, 115, 0.14);
+  --accent-copper: #d4a373;
+  --accent-copper-hover: #e2b88e;
+  --accent-copper-subtle: rgba(212, 163, 115, 0.14);
+  --accent-gold: #d4a373;
+  --accent-gold-hover: #e2b88e;
+  --accent-gold-subtle: rgba(212, 163, 115, 0.14);
 
   /* Status & Telemetry */
-  --status-emerald: #10B981;
-  --status-emerald-subtle: rgba(16, 185, 129, 0.12);
-  --status-amber: #F59E0B;
-  --status-amber-subtle: rgba(245, 158, 11, 0.12);
-  --status-rose: #F43F5E;
-  --status-rose-subtle: rgba(244, 63, 94, 0.12);
+  --status-emerald: #34d399;
+  --status-emerald-subtle: rgba(52, 211, 153, 0.14);
+  --status-amber: #fbbf24;
+  --status-amber-subtle: rgba(251, 191, 36, 0.14);
+  --status-rose: #f43f5e;
+  --status-rose-subtle: rgba(244, 63, 94, 0.14);
   --status-cyan: #38BDF8;
   --status-cyan-subtle: rgba(56, 189, 248, 0.12);
 
@@ -1632,7 +1638,7 @@ textarea {
 .canvas-wrapper {
   position: relative;
   width: 100%;
-  height: 240px;
+  height: clamp(230px, 26vw, 360px);
   cursor: crosshair;
   background: #0B0E14;
 }
