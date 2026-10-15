@@ -198,6 +198,17 @@ export const CockpitNavbar: React.FC<CockpitNavbarProps> = ({
             <span className="hidden md:inline font-mono text-[11px]">Cockpit DDU</span>
           </Link>
 
+          {/* Live Pitwall Link (Neon Realtime lap timing) */}
+          <Link
+            href="/live"
+            target="_blank"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#d4a373]/10 border border-[#d4a373]/25 hover:bg-[#d4a373]/20 text-xs font-medium text-[#e5c29f] hover:text-white transition-colors"
+            title="Open the Live Pitwall — laps appear in real time as the bridge uploads them"
+          >
+            <Radio className="w-3.5 h-3.5 text-[#d4a373]" />
+            <span className="hidden md:inline font-mono text-[11px]">Live Pitwall</span>
+          </Link>
+
           {/* Rig Bridge Download Link */}
           <Link
             href="/download"
