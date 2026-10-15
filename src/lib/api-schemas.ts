@@ -123,6 +123,8 @@ export const RaceEngineerRequestSchema = z.object({
   telemetryContext: RaceEngineerTelemetryContextSchema.optional(),
   setupContext: RaceEngineerSetupContextSchema.optional(),
   activeSim: z.string().optional(),
+  enableWebResearch: z.boolean().default(true).optional(),
+  deepResearchMode: z.boolean().default(false).optional(),
 });
 
 export type RaceEngineerRequest = z.infer<typeof RaceEngineerRequestSchema>;
@@ -166,6 +168,8 @@ export const GenerateSetupRequestSchema = z.object({
   }).nullable().optional(),
   telemetryContext: z.record(z.string(), z.any()).nullable().optional(),
   fullBaselineRequested: z.boolean().optional(),
+  enableWebResearch: z.boolean().default(true).optional(),
+  deepResearchMode: z.boolean().default(false).optional(),
 });
 
 export type GenerateSetupRequest = z.infer<typeof GenerateSetupRequestSchema>;
