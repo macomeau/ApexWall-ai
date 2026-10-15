@@ -38,6 +38,19 @@ const SORTED_IRACING_TRACKS = [
   ...IRACING_TRACKS.filter((t) => !MARC_TRACK_CONFIGS.has(t)),
 ];
 import { GGFrictionCircle } from "./GGFrictionCircle";
+import { DamperHistogramViewer } from "./DamperHistogramViewer";
+import { DynamicAeroMapViewer } from "./DynamicAeroMapViewer";
+import { CornerLedgerViewer } from "./CornerLedgerViewer";
+import { TrailBrakingMaster } from "./TrailBrakingMaster";
+import { AeroTrimCalculator } from "./AeroTrimCalculator";
+import { EndurancePitStrategist } from "./EndurancePitStrategist";
+import { StintConsistencyAnalyzer } from "./StintConsistencyAnalyzer";
+import { computeDamperHistograms } from "@/lib/damper-histogram-calculator";
+import { computeDynamicAeroMap } from "@/lib/aero-map-calculator";
+import { computeCornerLedger } from "@/lib/corner-ledger-calculator";
+import { computeTrailBrakingAnalysis } from "@/lib/trail-braking-profiler";
+import { computeEndurancePitStrategy } from "@/lib/endurance-strategy-calculator";
+import { computeStintConsistencyAnalysis } from "@/lib/stint-consistency-analyzer";
 import { TelemetryChart } from "./TelemetryChart";
 import { TrackMap2D } from "./TrackMap2D";
 import { SearchableSelect } from "./SearchableSelect";
@@ -674,6 +687,31 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
 
   // File Upload Handlers
   const processParsedTelemetry = (parsed: ParsedTelemetryFile) => {
+    // Engineering worksheets (backported upstream calculators): derive the
+    // damper/aero/corner/endurance analyses from the raw points so the
+    // worksheet modules and the closed-loop AI analysis have data.
+    if (parsed.points && parsed.points.length > 0) {
+      const trackForAnalysis = parsed.venue || track;
+      if (!parsed.damperHistograms) {
+        try { parsed.damperHistograms = computeDamperHistograms(parsed.points); } catch (e) { console.warn("Damper histograms failed:", e); }
+      }
+      if (!parsed.aeroMap) {
+        try { parsed.aeroMap = computeDynamicAeroMap(parsed.points); } catch (e) { console.warn("Aero map failed:", e); }
+      }
+      if (!parsed.cornerLedger) {
+        try { parsed.cornerLedger = computeCornerLedger(parsed.points, null, trackForAnalysis); } catch (e) { console.warn("Corner ledger failed:", e); }
+      }
+      if (!parsed.trailBrakingAnalysis) {
+        try { parsed.trailBrakingAnalysis = computeTrailBrakingAnalysis(parsed.points, trackForAnalysis); } catch (e) { console.warn("Trail braking analysis failed:", e); }
+      }
+      if (!parsed.enduranceStrategy) {
+        try { parsed.enduranceStrategy = computeEndurancePitStrategy(parsed.points, parsed.lapTime || "2:17.482"); } catch (e) { console.warn("Endurance strategy failed:", e); }
+      }
+      if (!parsed.stintConsistency) {
+        try { parsed.stintConsistency = computeStintConsistencyAnalysis(parsed.points, parsed.lapTime || "2:17.482"); } catch (e) { console.warn("Stint consistency failed:", e); }
+      }
+    }
+
     setParsedTelemetry(parsed);
 
     // Auto-detect track/car: prefer Vehicle/Venue from the file's metadata
@@ -920,6 +958,10 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
               verdict: frictionCircleData.gripDeficitVerdict,
             }
           : undefined,
+        damperHistograms: parsedTelemetry.damperHistograms,
+        aeroMap: parsedTelemetry.aeroMap,
+        enduranceStrategy: parsedTelemetry.enduranceStrategy,
+        stintConsistency: parsedTelemetry.stintConsistency,
       };
 
       const res = await fetch("/api/analyze-telemetry", {
@@ -2043,6 +2085,36 @@ export const TelemetryAnalyzer: React.FC<TelemetryAnalyzerProps> = ({
             {/* G-G Friction Circle & Grip Envelope Module */}
             {frictionCircleData && (
               <GGFrictionCircle data={frictionCircleData} hoverIndex={hoverIndex} />
+            )}
+
+            {/* Engineering Worksheets: damper, aero, corner ledger, trail braking, endurance */}
+            {parsedTelemetry?.damperHistograms && (
+              <DamperHistogramViewer data={parsedTelemetry.damperHistograms} />
+            )}
+            {parsedTelemetry?.aeroMap && (
+              <DynamicAeroMapViewer data={parsedTelemetry.aeroMap} />
+            )}
+            {parsedTelemetry && (
+              <AeroTrimCalculator
+                initialParams={{
+                  frontRideHeightMm: parsedTelemetry.aeroMap?.staticFrontRideHeightMm || 52,
+                  rearRideHeightMm: parsedTelemetry.aeroMap?.staticRearRideHeightMm || 72,
+                  rearWingAngleDeg: 8,
+                }}
+                carArchetype={car}
+              />
+            )}
+            {parsedTelemetry?.cornerLedger && (
+              <CornerLedgerViewer ledger={parsedTelemetry.cornerLedger} />
+            )}
+            {parsedTelemetry?.trailBrakingAnalysis && (
+              <TrailBrakingMaster analysis={parsedTelemetry.trailBrakingAnalysis} />
+            )}
+            {parsedTelemetry?.enduranceStrategy && (
+              <EndurancePitStrategist data={parsedTelemetry.enduranceStrategy} />
+            )}
+            {parsedTelemetry?.stintConsistency && (
+              <StintConsistencyAnalyzer data={parsedTelemetry.stintConsistency} />
             )}
 
             {/* 3. 4-Corner Tyre Thermal HUD */}

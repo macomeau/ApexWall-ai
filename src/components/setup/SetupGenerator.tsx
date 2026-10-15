@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import { GeneratedSetupResult } from "@/types/telemetry";
 import { SetupExportModal } from "./SetupExportModal";
 import { SetupMorphModal } from "./SetupMorphModal";
+import { SetupIngestorModal } from "./SetupIngestorModal";
+import { ParsedSetupFile } from "@/lib/setup-importer";
 import { saveSetupToVault } from "@/lib/setup-vault";
 import { ACModIngestor } from "./ACModIngestor";
 import { AssettoCorsaModData } from "@/lib/ac-mod-parser";
@@ -88,6 +90,11 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
   const [copied, setCopied] = useState(false);
   const [savedToVault, setSavedToVault] = useState(false);
   const [isMorphModalOpen, setIsMorphModalOpen] = useState(false);
+  const [enableWebResearch, setEnableWebResearch] = useState(true);
+  const [deepResearchMode, setDeepResearchMode] = useState(false);
+  const [showWebResearchSources, setShowWebResearchSources] = useState(false);
+  const [isIngestorModalOpen, setIsIngestorModalOpen] = useState(false);
+  const [importedBaseline, setImportedBaseline] = useState<any>(null);
 
   useEffect(() => {
     if (state !== "loading") return;
@@ -96,6 +103,21 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
     }, 1400);
     return () => clearInterval(interval);
   }, [state]);
+
+  const handleApplyImportedBaseline = (parsedSetup: ParsedSetupFile) => {
+    if (parsedSetup.game) setGame(parsedSetup.game);
+    if (parsedSetup.car) setCar(parsedSetup.car);
+    if (parsedSetup.track) setTrack(parsedSetup.track);
+    setImportedBaseline({
+      name: parsedSetup.setupName,
+      summary: parsedSetup.summary,
+      sections: parsedSetup.sections,
+      game: parsedSetup.game || game,
+      car: parsedSetup.car || car,
+      track: parsedSetup.track || track,
+    });
+    setIsIngestorModalOpen(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,6 +144,10 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
           handlingIssue,
           skillLevel,
           customModProfile: acModData,
+          enableWebResearch,
+          deepResearchMode,
+          baselineSetup: importedBaseline || baselineSetup || undefined,
+          telemetryContext,
         }),
       });
 
@@ -219,8 +245,50 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
               <span className="panel-sublabel">CHASSIS SPEC & CIRCUIT ENVIRONMENT</span>
             </div>
           </div>
-          <div className="panel-telemetry-badge">
-            <span className="badge-dot"></span> BASELINE BUILDER
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEnableWebResearch(!enableWebResearch)}
+              className={`action-btn transition-all ${
+                enableWebResearch
+                  ? "bg-[#d4a373]/15 border-[#d4a373]/40 text-[#f7ebe1]"
+                  : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
+              }`}
+              title="Toggle Live Web Research: searches live sim-racing benchmarks, community setups, BOP, and patch notes"
+            >
+              <span>Live Web Research</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${enableWebResearch ? "bg-[#d4a373]/25 text-[#f7ebe1]" : "bg-white/10 text-slate-400"}`}>
+                {enableWebResearch ? "ON" : "OFF"}
+              </span>
+            </button>
+            {enableWebResearch && (
+              <button
+                type="button"
+                onClick={() => setDeepResearchMode(!deepResearchMode)}
+                className={`action-btn transition-all ${
+                  deepResearchMode
+                    ? "bg-[#d4a373]/20 border-[#d4a373] text-[#f7ebe1]"
+                    : "bg-white/5 border-white/10 text-slate-400 hover:text-slate-200"
+                }`}
+                title="Deep Research Mode: crawls full web pages and extracts garage setup tables"
+              >
+                <span>Deep Crawl</span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${deepResearchMode ? "bg-[#d4a373]/30 text-white" : "bg-white/10 text-slate-400"}`}>
+                  {deepResearchMode ? "DEEP" : "STD"}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsIngestorModalOpen(true)}
+              className="action-btn action-btn-accent"
+              title="Import an existing setup from ACC (.json), Assetto Corsa (.ini), or rF2/LMU (.svm)"
+            >
+              <span>Import Existing Setup</span>
+            </button>
+            <div className="panel-telemetry-badge">
+              <span className="badge-dot"></span> {importedBaseline ? `BASELINE: ${importedBaseline.name || "IMPORTED"}` : "BASELINE BUILDER"}
+            </div>
           </div>
         </div>
 
@@ -513,6 +581,73 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
               <span className="panel-sublabel">CALIBRATED CHASSIS SPEC</span>
             </div>
           </div>
+          {state === "result" && result && result.webResearch?.sources && result.webResearch.sources.length > 0 && (
+            <div className="p-3.5 rounded-xl border border-[#d4a373]/25 bg-[#d4a373]/[0.03] text-xs my-2.5 font-sans">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-slate-100 tracking-tight">Live Web Intelligence & Sim Benchmarks</span>
+                  {result.webResearch.deepMode && (
+                    <span className="text-[9.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200">
+                      Deep Crawl Active
+                    </span>
+                  )}
+                  <span className="text-[10.5px] text-[#d4a373] font-mono">({result.webResearch.sources.length} sources verified{result.webResearch.deepExtracts ? `, ${result.webResearch.deepExtracts.length} deep-crawled` : ""})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWebResearchSources(!showWebResearchSources)}
+                  className="text-[11px] text-slate-400 hover:text-[#e5c29f] transition-colors"
+                >
+                  {showWebResearchSources ? "Hide Sources ▲" : "View Sources ▼"}
+                </button>
+              </div>
+              {showWebResearchSources && (
+                <div className="space-y-2.5 mt-2.5 pt-2 border-t border-white/10">
+                  {result.webResearch.deepExtracts && result.webResearch.deepExtracts.length > 0 && (
+                    <div className="space-y-1.5">
+                      {result.webResearch.deepExtracts.map((ext, eIdx) => (
+                        <div key={eIdx} className="p-2.5 rounded-lg bg-black/60 border border-[#d4a373]/25 text-[11px]">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span className="font-semibold text-white truncate">{ext.title}</span>
+                            <span className="text-[10px] font-mono text-[#d4a373] bg-[#d4a373]/15 px-1.5 py-0.5 rounded shrink-0">{ext.domain}</span>
+                          </div>
+                          {ext.extractedParameters && (
+                            <div className="flex flex-wrap gap-1.5 mb-1.5">
+                              {Object.entries(ext.extractedParameters).map(([k, v], pIdx) => (
+                                <span key={pIdx} className="text-[10.5px] font-mono bg-white/5 border border-white/10 px-2 py-0.5 rounded text-amber-200">
+                                  <strong className="text-slate-300 font-sans mr-1">{k}:</strong> {String(v)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <ul className="space-y-1 text-slate-300 italic">
+                            {ext.keyExcerpts.slice(0, 2).map((exc, xIdx) => (
+                              <li key={xIdx}>&ldquo;{exc}&rdquo;</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {result.webResearch.sources.map((src, idx) => (
+                      <a
+                        key={idx}
+                        href={src.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 rounded-lg border border-white/5 bg-black/40 hover:bg-black/60 hover:border-[#d4a373]/30 transition-all text-left"
+                      >
+                        <span className="text-[10px] font-mono text-[#d4a373] bg-[#d4a373]/10 px-1.5 py-0.5 rounded">{src.domain}</span>
+                        <div className="text-slate-200 font-medium text-[11.5px] mt-1">{src.title}</div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {state === "result" && result && (
             <div className="sheet-actions">
               <button type="button" className="action-btn" onClick={handleCopy}>
@@ -722,6 +857,17 @@ export const SetupGenerator: React.FC<SetupGeneratorProps> = ({
           </div>
         )}
       </section>
+
+      {isIngestorModalOpen && (
+        <SetupIngestorModal
+          isOpen={isIngestorModalOpen}
+          onClose={() => setIsIngestorModalOpen(false)}
+          onApplyBaseline={handleApplyImportedBaseline}
+          onDiscussWithEngineer={() => {
+            onDiscussWithEngineer?.();
+          }}
+        />
+      )}
     </div>
   );
 };
