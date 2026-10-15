@@ -182,7 +182,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "CAMBER_FRONT",
     label: "Front Camber (LF/RF)",
-    aliases: ["front camber", "camber lf", "camber rf"],
+    aliases: ["front camber", "camber lf", "camber rf", "front camber (fl/fr)", "camber fl/fr", "front camber (lf/rf)", "camber front"],
     menuTab: "MECHANICAL GRIP",
     subsystem: "alignment",
     unit: "°",
@@ -196,7 +196,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "CAMBER_REAR",
     label: "Rear Camber (LR/RR)",
-    aliases: ["rear camber", "camber lr", "camber rr"],
+    aliases: ["rear camber", "camber lr", "camber rr", "rear camber (rl/rr)", "camber rl/rr", "rear camber (lr/rr)", "camber rear"],
     menuTab: "MECHANICAL GRIP",
     subsystem: "alignment",
     unit: "°",
@@ -210,7 +210,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "TOE_FRONT",
     label: "Front Toe",
-    aliases: ["front toe", "toe lf", "toe rf"],
+    aliases: ["front toe", "toe lf", "toe rf", "front toe (fl/fr)", "front toe (lf/rf)", "toe fl/fr"],
     menuTab: "MECHANICAL GRIP",
     subsystem: "alignment",
     unit: "°",
@@ -224,7 +224,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "TOE_REAR",
     label: "Rear Toe",
-    aliases: ["rear toe", "toe lr", "toe rr"],
+    aliases: ["rear toe", "toe lr", "toe rr", "rear toe (rl/rr)", "rear toe (lr/rr)", "toe rl/rr"],
     menuTab: "MECHANICAL GRIP",
     subsystem: "alignment",
     unit: "°",
@@ -239,7 +239,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "BUMP_SLOW_F",
     label: "Bump Slow Front",
-    aliases: ["bump lf", "slow bump front", "bump front"],
+    aliases: ["bump lf", "slow bump front", "bump front", "bump front (fl/fr)", "bump front (lf/rf)", "slow bump (front / rear)"],
     menuTab: "DAMPERS",
     subsystem: "dampers",
     unit: "clicks",
@@ -253,7 +253,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "REBOUND_SLOW_F",
     label: "Rebound Slow Front",
-    aliases: ["rebound lf", "slow rebound front", "rebound front"],
+    aliases: ["rebound lf", "slow rebound front", "rebound front", "rebound front (fl/fr)", "rebound front (lf/rf)", "slow rebound (front / rear)"],
     menuTab: "DAMPERS",
     subsystem: "dampers",
     unit: "clicks",
@@ -267,7 +267,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "BUMP_SLOW_R",
     label: "Bump Slow Rear",
-    aliases: ["bump lr", "slow bump rear", "bump rear"],
+    aliases: ["bump lr", "slow bump rear", "bump rear", "bump rear (rl/rr)", "bump rear (lr/rr)"],
     menuTab: "DAMPERS",
     subsystem: "dampers",
     unit: "clicks",
@@ -281,7 +281,7 @@ export const ACC_GT3_PARAMETERS: ParameterDefinition[] = [
   {
     id: "REBOUND_SLOW_R",
     label: "Rebound Slow Rear",
-    aliases: ["rebound lr", "slow rebound rear", "rebound rear"],
+    aliases: ["rebound lr", "slow rebound rear", "rebound rear", "rebound rear (rl/rr)", "rebound rear (lr/rr)"],
     menuTab: "DAMPERS",
     subsystem: "dampers",
     unit: "clicks",
