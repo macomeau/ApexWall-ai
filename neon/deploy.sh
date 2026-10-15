@@ -68,6 +68,17 @@ if [ -n "${BRIDGE_USER_ID:-}" ]; then
   echo "BRIDGE_USER_ID=\"${BRIDGE_USER_ID}\"" >> "$ENV_FILE"
 fi
 
+# Neon Realtime vars (live-laps endpoint). The pinned CLI's env pull can't
+# see them yet, so pull just these two with the latest CLI and append them.
+RT_FILE="$(mktemp)"
+if npx -y neon@latest env pull --project-id frosty-fog-97413615 --branch production \
+  --file "$RT_FILE" -e NEON_REALTIME_URL,NEON_REALTIME_SECRET >/dev/null 2>&1; then
+  grep -E "^NEON_REALTIME_" "$RT_FILE" | while IFS='=' read -r k v; do
+    echo "$k=\"$v\"" >> "$ENV_FILE"
+  done
+fi
+rm -f "$RT_FILE"
+
 echo "==> deploying to Special-AI (production branch)"
 cd "$NEON_DIR"
 neon deploy --env "$ENV_FILE" --update-existing

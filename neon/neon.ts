@@ -15,6 +15,8 @@ for (const k of [
   "AI_CHAT_MODELS",
   "BRIDGE_API_KEY",
   "BRIDGE_USER_ID",
+  "NEON_REALTIME_URL",
+  "NEON_REALTIME_SECRET",
 ]) {
   if (process.env[k]) env[k] = process.env[k]!;
 }

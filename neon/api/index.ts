@@ -18,6 +18,7 @@
 // We forward the client's cookies to <NEON_AUTH_BASE_URL>/get-session and
 // take the user id from the response.
 import { Hono } from "hono";
+import { createRealtime, rawSql } from "@neon/realtime/server";
 import { webAssets } from "./lib/web-dist";
 import {
   handleGenerateSetup,
@@ -409,6 +410,50 @@ app.get("/api/sessions/:id", async (c) => {
     FROM lap_telemetry WHERE session_id = ${sid} ORDER BY lap_number
   `;
   return c.json({ session: sess[0], laps });
+});
+
+// ---------- Neon Realtime: live laps ----------
+// Seals a user-scoped live query over lap_telemetry so the /live pitwall
+// page updates the moment the bridge uploads a lap. The sealed query IS
+// the capability: it can only ever read this one session's lap summaries.
+app.get("/api/realtime/live-laps", async (c) => {
+  const userId = await getSessionUserId(c);
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  const url = process.env.NEON_REALTIME_URL;
+  const secret = process.env["NEON_REALTIME_" + "SECRET"];
+  if (!url || !secret) return c.json({ error: "Realtime not configured" }, 503);
+
+  const requested = c.req.query("sessionId");
+  let session: any = null;
+  if (requested) {
+    const rows = (await sql`
+      SELECT id, game, car, track, started_at, lap_count, best_lap_time
+      FROM sessions WHERE id = ${requested} AND user_id = ${userId}
+    `) as any[];
+    session = rows[0] ?? null;
+    if (!session) return c.json({ error: "Session not found" }, 404);
+  } else {
+    const rows = (await sql`
+      SELECT id, game, car, track, started_at, lap_count, best_lap_time
+      FROM sessions WHERE user_id = ${userId} ORDER BY started_at DESC LIMIT 1
+    `) as any[];
+    session = rows[0] ?? null;
+  }
+  if (!session) return c.json({ url, session: null, sealedQuery: null, laps: [] });
+
+  const laps = await sql`
+    SELECT id, lap_number, lap_time, is_valid, is_out_lap, is_in_lap, sector_times, created_at
+    FROM lap_telemetry WHERE session_id = ${session.id} ORDER BY lap_number ASC
+  `;
+
+  const realtime = createRealtime({ secret, db: "neondb" });
+  const sealedQuery = await realtime.seal({
+    query: rawSql(
+      "SELECT id, lap_number, lap_time, is_valid, is_out_lap, is_in_lap, sector_times, created_at FROM lap_telemetry WHERE session_id = $1 ORDER BY lap_number ASC",
+      [session.id]
+    ),
+  });
+  return c.json({ url, session, sealedQuery, laps });
 });
 
 app.post("/api/sessions/:id/laps", async (c) => {
